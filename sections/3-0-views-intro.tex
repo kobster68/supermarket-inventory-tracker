@@ -4,7 +4,7 @@
 This section presents the architecture as views. Following the fourth edition of
 \emph{Software Architecture in Practice} and the SEI Views and Beyond template,
 architectural views fall into three categories according to the kind of element they
-show (Bass, Clements, and Kazman 333; ``Software Architecture Document Template''):
+show (Bass, Clements, and Kazman 333; ``Software Architecture Document Template,'' \S\,Views):
 \begin{itemize}[nosep]
   \item \textbf{Module views}, whose elements are implementation units --- the
   system's code structure;
@@ -19,12 +19,14 @@ second draft. The table below classifies each required view and records its stat
 that the required structure is visible even in a draft.
 
 \begin{center}
-\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}X|c|c|c|>{\raggedright\arraybackslash}X|}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.17\linewidth}|c|c|c|>{\raggedright\arraybackslash}p{0.15\linewidth}|}
 \hline
-\textbf{View} & \textbf{Module} & \textbf{C\&C} & \textbf{Allocation} & \textbf{Status}\\\hline
-Runtime C\&C view (key view) & No & Yes & No & Delivered in this draft (Section~\ref{sec:cc-view})\\\hline
-Module view & Yes & No & No & Draft 2\\\hline
-Allocation view & No & No & Yes & Draft 2\\\hline
+\textbf{Name of view} & \textbf{Viewtype} & \textbf{Module?} & \textbf{C\&C?} & \textbf{Allocation?} & \textbf{Status}\\\hline
+Runtime C\&C view (key view) & Components-and-Connectors & No & Yes & No & Delivered in this draft (Section~\ref{sec:cc-view})\\\hline
+Module view & Module & Yes & No & No & Draft 2\\\hline
+Allocation view & Allocation & No & No & Yes & Draft 2\\\hline
 \end{tabularx}
 \end{center}
 
