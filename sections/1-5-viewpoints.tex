@@ -2,4 +2,60 @@
 % Owner: Slice 2 (issue #3).
 \subsection{Viewpoint Definitions}
 \label{sec:viewpoints}
-\todo{To be completed in Slice 2 (issue \#3): the Components-and-Connectors viewpoint definition and the summary table mapping stakeholders to viewpoints.}
+
+This draft uses one viewpoint, the Components-and-Connectors viewpoint, because the
+one view it delivers is a C\&C view. The viewpoint is defined below in the form the
+SEI Views and Beyond template uses. The summary of which stakeholders each viewpoint
+serves is kept with the stakeholder matrix in Section~\ref{sec:stakeholders}; the
+Module and Allocation viewpoints that the later drafts will add are not defined here.
+
+\subsubsection{Components-and-Connectors Viewpoint Definition}
+
+\paragraph{Abstract.}
+A Components-and-Connectors view shows the system at runtime: the units that compute
+and hold state (components) and the pathways through which they interact (connectors).
+It is the view that answers how an \InventoryEvent travels from a store to the \DC and
+on to the clients that need it, and what happens when the link between them fails
+(Bass, Clements, and Kazman 335).
+
+\paragraph{Stakeholders and their concerns addressed.}
+Store managers and store operators who need the local inventory to stay reachable
+during a WAN outage; \DC managers who rely on the master record and the shipping
+orders; operators who need the acknowledgement and replay rules to be explicit;
+security reviewers who need the store-to-\DC channels marked; and developers of new
+subscribing clients. Their concerns are the availability, delivery, performance,
+security and modifiability scenarios of Section~\ref{sec:driving-requirements}.
+
+\paragraph{Elements, relations, properties, and constraints.}
+The elements are the runtime components \POSAdapter, \StoreAgent, \StoreLocalInventory,
+\Outbox, \CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway,
+\StoreTrackingClient and \ReportingClient, together with the two external systems at
+the boundary. The relations are three connector types:
+\begin{itemize}[nosep]
+  \item \texttt{<<pub-sub>>} --- the single n-ary \IEP connector, with the \CFE as the
+  broker between the publishers and the subscribers;
+  \item \texttt{<<request/reply>>} --- synchronous calls, such as a client querying the
+  \CentralMasterInventory or a boundary element exchanging messages with an external
+  system;
+  \item \texttt{<<data access>>} --- a component reading or writing its own persistent
+  store.
+\end{itemize}
+The properties recorded for each element and connector are location, persistence,
+protocol, security, delivery semantics and throughput.
+The constraints are listed with the view in Section~\ref{sec:cc-view}.
+
+\paragraph{Language(s) to model or represent conforming views.}
+A conforming view is drawn as a UML component diagram for its primary presentation and
+as UML sequence diagrams for its behavior, authored in PlantUML with the shared
+notation key of Section~\ref{sec:views} (Bass, Clements, and Kazman 341; Hawker,
+``Architecture Documentation,'' slides 14--17).
+
+\paragraph{Applicable evaluation and consistency criteria.}
+A conforming view is complete and consistent when every element and connector in a
+diagram has an entry in the element catalog and the reverse, and when every scenario
+that touches the runtime has a path through the view.
+
+\paragraph{Viewpoint source.}
+The fourth edition of \emph{Software Architecture in Practice}, Chapter 22, and the SEI
+Views and Beyond Software Architecture Document template (Bass, Clements, and Kazman
+333--338; ``Software Architecture Document Template'').
