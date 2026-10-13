@@ -33,8 +33,12 @@ rectangle "Distribution Center" as DCB {
   component "Store-Tracking\nClient" as STC #fff2cc
   component "Reporting Client" as RC #fff2cc
 }
-node "External\nsupplier/ERP system" as ERP #dae8fc
 actor "DC\nmanager" as DMGR
+node "External\nsupplier/ERP system" as ERP #dae8fc
+
+' keep the DC manager to the right of the DC box so its query arrows enter from the
+' right, clear of the "Distribution Center" boundary title at the top of the box
+CMIDB -[hidden]right- DMGR
 
 ' ---- connectors ---------------------------------------------------------------
 POS --> POSAD : <<request/reply>>\nsales records
