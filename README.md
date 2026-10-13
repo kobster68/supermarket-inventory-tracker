@@ -3,8 +3,9 @@
 Source for the architecture document (SAD) produced by our four-person team for
 **SWEN-755 Software Architecture** at the Rochester Institute of Technology. The
 document is written in LaTeX, follows the SEI *Views and Beyond* template section for
-section, and compiles to `main.pdf`. GitHub Actions compiles it on every push and
-pull request and attaches the PDF so reviewers read the document, not the diff.
+section, and compiles to `main.pdf`. GitHub Actions compiles it on every push (any
+branch) and every pull request and attaches the PDF so reviewers read the document,
+not the diff.
 
 Team: **Godson Umoren, Kobe Laprade, Leon Letournel, Mike Andrews.**
 
@@ -52,7 +53,7 @@ Lint the sources with:
 
 ```bash
 scripts/lint.sh          # the checks CI runs on every push and PR
-scripts/lint.sh --main   # stricter: also fails if any \todo remains in sections/
+scripts/lint.sh --main   # stricter: also fails if any TODO or \todo remains in sections/
 ```
 
 ### Fonts
@@ -64,10 +65,11 @@ No system fonts are used, so the build is identical on a laptop and in CI.
 
 CI runs in the pinned container `texlive/texlive:TL2025-historic` and adds
 `plantuml`, `graphviz`, `librsvg2-bin` (for `rsvg-convert`) and `poppler-utils` (for
-`pdfinfo`) with `apt`. It renders the diagrams, runs `scripts/build.sh` and
-`scripts/lint.sh`, uploads `main.pdf` as an artifact, prints the page count, and fails
-if `main.pdf` is missing. The **Build SAD** check should be marked a required status
-check on pull requests in the repository's branch-protection settings.
+`pdfinfo`) with `apt`. It then runs `scripts/build.sh` (which renders the diagrams,
+compiles the document, prints the page count, and fails if `main.pdf` was not
+produced) and `scripts/lint.sh`, and uploads `main.pdf` as an artifact. The
+**Build SAD** check should be marked a required status check on pull requests in the
+repository's branch-protection settings.
 
 ## Bibliography
 
@@ -80,6 +82,15 @@ container. The hand-maintained list keeps the build reproducible and never block
 `references.bib` is ready for a later switch to biblatex once the pinned toolchain
 provides `biblatex-mla` in both places. Cite the textbook with page numbers and the
 course decks with slide numbers.
+
+## Before submission
+
+- [ ] Confirm the lecture **year/term** for the SWEN-755 slide decks on myCourses and
+  add it to each deck entry in `sections/5-references.tex` (and `references.bib`).
+- [ ] Confirm the due years, the submission format, and the dropbox on myCourses.
+- [ ] Check the page count is within the 10--14 page target (CI prints it).
+- [ ] Run `scripts/lint.sh --main` and resolve every remaining TODO before the final
+  integration commit, then tag the submitted commit.
 
 ## Section ownership and page budget
 

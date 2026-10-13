@@ -19,11 +19,14 @@ if command -v latexmk >/dev/null 2>&1; then
   latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
 else
   echo "    latexmk not found; running pdflatex three times"
-  for _ in 1 2 3; do
-    pdflatex -interaction=nonstopmode -halt-on-error main.tex >/dev/null
+  # Pass 1 runs visibly so a LaTeX error is seen immediately; every pass dumps the
+  # log tail and stops on failure, so set -e never hides an error behind /dev/null.
+  pdflatex -interaction=nonstopmode -halt-on-error main.tex \
+    || { echo "ERROR: pdflatex failed; last 40 lines of main.log:" >&2; tail -40 main.log >&2; exit 1; }
+  for _ in 2 3; do
+    pdflatex -interaction=nonstopmode -halt-on-error main.tex >/dev/null \
+      || { echo "ERROR: pdflatex failed; last 40 lines of main.log:" >&2; tail -40 main.log >&2; exit 1; }
   done
-  echo "    (last pdflatex pass)"
-  pdflatex -interaction=nonstopmode -halt-on-error main.tex
 fi
 
 if [ ! -f main.pdf ]; then

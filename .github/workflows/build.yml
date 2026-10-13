@@ -1,11 +1,12 @@
 name: Build SAD
 
-# Compile the architecture document on every push to main and every pull request.
-# Reviewers read the uploaded main.pdf, not the diff.
+# Compile the architecture document on every push (any branch) and every pull
+# request, so slice authors get the PDF artifact on each push. Reviewers read the
+# uploaded main.pdf, not the diff.
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
   pull_request:
 
 permissions:
@@ -35,17 +36,13 @@ jobs:
             plantuml graphviz librsvg2-bin poppler-utils default-jre-headless
           rm -rf /var/lib/apt/lists/*
 
-      - name: Render diagrams
-        run: bash scripts/render-diagrams.sh
-
       - name: Build main.pdf
+        # build.sh renders the diagrams, compiles the document, prints the page
+        # count, and exits non-zero if main.pdf was not produced.
         run: bash scripts/build.sh
 
       - name: Lint
         run: bash scripts/lint.sh
-
-      - name: Fail if main.pdf is missing
-        run: test -f main.pdf
 
       - name: Upload main.pdf
         if: always()
@@ -54,6 +51,3 @@ jobs:
           name: main-pdf
           path: main.pdf
           if-no-files-found: error
-
-      - name: Print page count
-        run: pdfinfo main.pdf | grep -i '^Pages:'

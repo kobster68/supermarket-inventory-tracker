@@ -6,7 +6,7 @@
 \subsection{Glossary}
 \label{sec:glossary}
 
-\begin{description}[style=nextline,leftmargin=0pt]
+\begin{description}[style=nextline,leftmargin=1em,labelindent=0pt]
 \item[Store Agent] The runtime component in each store that receives inventory events from the store's point-of-sale system (through the POS Adapter) and from local stock operations, applies them to the Store-Local Inventory, and forwards them to the distribution center through the Outbox; it is restartable from the durable Outbox and a local snapshot within the 30-minute recovery cap.
 \item[Store-Local Inventory] The store's own copy of its inventory, updated locally first so it stays readable and current with no wide-area network.
 \item[Outbox] The durable, ordered queue inside the Store Agent that holds inventory events until the Communications Front-End acknowledges them (store-and-forward for guaranteed delivery).
