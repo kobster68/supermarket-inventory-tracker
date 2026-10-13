@@ -2,7 +2,7 @@
 ' Context diagram at the level of the Components-and-Connectors view.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 !include style.puml
-title Components-and-Connectors view --- context diagram
+title Components-and-Connectors view: context diagram
 
 left to right direction
 skinparam componentStyle rectangle
@@ -14,17 +14,19 @@ node "External\nsupplier/ERP\nsystem" as ERP #dae8fc
 
 rectangle "**Supermarket Inventory Tracking System**\n(stores + distribution center;\nscope of this C&C view)" as SYS #d5e8d4
 
-POS --> SYS : sales records\n<<request/reply>>
-SYS --> ERP : purchase and\nshipping orders\n<<request/reply>>
-ERP --> SYS : goods-receipt\nconfirmations
-SYS --> SM : store inventory views,\nshipping orders
-SYS --> DM : master inventory,\nreports
-SM --> SYS : queries
-DM --> SYS : queries
+POS --> SYS : <<request/reply>>\nsales records
+SYS --> ERP : <<request/reply>>\npurchase and\nshipping orders
+ERP --> SYS : <<request/reply>>\ngoods-receipt\nconfirmations
+SYS --> SM : <<request/reply>>\nstore inventory views
+SM --> SYS : <<request/reply>>\nlocal queries
+SYS --> DM : <<request/reply>>\nmaster inventory,\nreports, shipping orders
+DM --> SYS : <<request/reply>>\nqueries
 
 legend bottom
   The shaded box is the view's scope: the store systems and the
   distribution-center system of the primary presentation, taken as one.
   Blue boxes are external systems; stick figures are human roles.
+  Every edge is a <<request/reply>> connector; the n-ary <<pub-sub>>,
+  <<data access>> and <<local call>> connectors are internal to the box.
 endlegend
 @enduml

@@ -2,7 +2,7 @@
 ' Behavior 1: normal publish -> acknowledge -> fan-out.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 !include style.puml
-title Components-and-Connectors view --- behavior: publish, acknowledge, fan-out
+title Components-and-Connectors view: behavior, publish, acknowledge, fan-out
 
 skinparam sequenceMessageAlign center
 skinparam maxMessageSize 220
@@ -24,8 +24,8 @@ group one local step
 end
 OB -> CFE : publish (Inventory Event)\nIEP over TLS [secure]
 CFE -> CFEDB : persist
-CFE --> SA : acknowledge (sequence no.)\nIEP over TLS [secure]
-note over OB : acknowledged events\nmay be pruned
+CFE --> OB : acknowledge (sequence no.)\nIEP over TLS [secure]
+note over OB : holds the last acknowledged\nsequence; acknowledged events\nmay be pruned
 CFE -> SUB : notify by topic (source, product family)
 note over SUB : idempotent by event ID;\nduplicates are ignored
 

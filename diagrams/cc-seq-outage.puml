@@ -2,7 +2,7 @@
 ' Behavior 2: WAN outage -> Outbox buffering -> reconnect -> replay.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 !include style.puml
-title Components-and-Connectors view --- behavior: outage, buffering, replay
+title Components-and-Connectors view: behavior, outage, buffering, replay
 
 skinparam sequenceMessageAlign center
 skinparam maxMessageSize 230
