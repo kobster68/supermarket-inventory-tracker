@@ -6,7 +6,7 @@
 This draft uses one viewpoint, the Components-and-Connectors viewpoint, because the
 one view it delivers is a C\&C view. The viewpoint is defined below in the form the
 SEI Views and Beyond template uses. The summary of which stakeholders each viewpoint
-serves is kept with the stakeholder matrix in Section~\ref{sec:stakeholders}; the
+serves is presented with the stakeholder matrix in Section~\ref{sec:stakeholders}; the
 Module and Allocation viewpoints that the later drafts will add are not defined here.
 
 \subsubsection{Components-and-Connectors Viewpoint Definition}
@@ -30,15 +30,18 @@ security and modifiability scenarios of Section~\ref{sec:driving-requirements}.
 The elements are the runtime components \POSAdapter, \StoreAgent, \StoreLocalInventory,
 \Outbox, \CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway,
 \StoreTrackingClient and \ReportingClient, together with the two external systems at
-the boundary. The relations are three connector types:
+the boundary and the store and \DC managers as actors. The relations are four connector
+types:
 \begin{itemize}[nosep]
   \item \texttt{<<pub-sub>>} --- the single n-ary \IEP connector, with the \CFE as the
   broker between the publishers and the subscribers;
-  \item \texttt{<<request/reply>>} --- synchronous calls, such as a client querying the
-  \CentralMasterInventory or a boundary element exchanging messages with an external
-  system;
+  \item \texttt{<<request/reply>>} --- synchronous calls, such as a manager or a client
+  querying the \CentralMasterInventory or a boundary element exchanging messages with an
+  external system;
   \item \texttt{<<data access>>} --- a component reading or writing its own persistent
-  store.
+  store;
+  \item \texttt{<<local call>>} --- an in-process hand-off between a component and its
+  own boundary element.
 \end{itemize}
 The properties recorded for each element and connector are location, persistence,
 protocol, security, delivery semantics and throughput.
@@ -58,4 +61,4 @@ that touches the runtime has a path through the view.
 \paragraph{Viewpoint source.}
 The fourth edition of \emph{Software Architecture in Practice}, Chapter 22, and the SEI
 Views and Beyond Software Architecture Document template (Bass, Clements, and Kazman
-333--338; ``Software Architecture Document Template'').
+333--338; ``Software Architecture Document Template,'' \S\,Viewpoint Definitions).
