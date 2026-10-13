@@ -1,0 +1,100 @@
+% macros.tex --- shared vocabulary for the Supermarket Inventory Tracking System SAD.
+%
+% FROZEN CONTRACT. Change this file only through a small, separate pull request,
+% never on a slice branch. Every architecture element name and every protocol
+% operation name is written only through the macros defined here, so the C&C view,
+% the interface specification and the tactics table use identical names without
+% coordination.
+%
+% Contents:
+%   * one command per element (roman type, trailing \xspace) via \newelement
+%   * one command per Inventory Exchange Protocol operation (typewriter) via \newop
+%   * the qascenario macro: a six-part scenario as a boxed table
+%   * the tacticstable environment and \tacticrow row macro
+%   * the notapplicable environment
+%   * the \todo marker (rejected on main by scripts/lint.sh --main)
+
+% ---- Element-name helper ---------------------------------------------------------
+% \newelement{CSname}{Printed Name}  defines \CSname -> "Printed Name"<xspace>.
+% Adding an element is one line.
+\newcommand{\newelement}[2]{\expandafter\newcommand\csname #1\endcsname{#2\xspace}}
+
+\newelement{CFE}{Communications Front-End}
+\newelement{StoreAgent}{Store Agent}
+\newelement{DCAgent}{DC Agent}
+\newelement{StoreLocalInventory}{Store-Local Inventory}
+\newelement{Outbox}{Outbox}
+\newelement{InventoryEvent}{Inventory Event}
+\newelement{Acknowledgement}{Acknowledgement}
+\newelement{CentralMasterInventory}{Central Master Inventory}
+\newelement{IEP}{Inventory Exchange Protocol}
+\newelement{Subscriber}{Subscriber}
+\newelement{ShippingOrderGen}{Shipping-Order Generation}
+\newelement{StoreTrackingClient}{Store-Tracking Client}
+\newelement{ReportingClient}{Reporting Client}
+\newelement{POSAdapter}{POS Adapter}
+\newelement{SupplierGateway}{Supplier Gateway}
+\newelement{DC}{DC}
+\newelement{Store}{Store}
+
+% ---- Operation-name helper -------------------------------------------------------
+% \newop{CSname}{printed}  defines \CSname -> \texttt{printed}<xspace>.
+\newcommand{\newop}[2]{\expandafter\newcommand\csname #1\endcsname{\texttt{#2}\xspace}}
+
+\newop{opPublish}{publish}
+\newop{opAck}{acknowledge}
+\newop{opSubscribe}{subscribe}
+\newop{opUnsubscribe}{unsubscribe}
+\newop{opReplay}{replay-from-sequence}
+\newop{opResync}{resync}
+
+% ---- qascenario: a six-part quality-attribute scenario as a boxed table ----------
+% Usage:
+%   \qascenario{AV-1}{source}{stimulus}{artifact}{environment}{response}{measure}
+% The scenario identifier (first argument) is shown as the caption and links to the
+% frozen label scn:<ID> declared in scenarios.tex.
+\newcommand{\qascenario}[7]{%
+  \par\medskip\noindent
+  \begin{tabularx}{\linewidth}{|>{\bfseries}l|X|}
+    \hline
+    \multicolumn{2}{|l|}{\textbf{Quality-attribute scenario~\scnref{#1}}}\\
+    \hline
+    Source            & #2\\\hline
+    Stimulus          & #3\\\hline
+    Artifact          & #4\\\hline
+    Environment       & #5\\\hline
+    Response          & #6\\\hline
+    Response measure  & #7\\\hline
+  \end{tabularx}\par\medskip
+}
+
+% ---- Tactics table: header environment + one-row macro ---------------------------
+% Columns: Scenario | Tactic (4th-edition name, page) | Realised in | Trade-off.
+% Usage:
+%   \begin{tacticstable}
+%     \tacticrow{\scnref{AV-1}}{tactic}{realised in}{trade-off}
+%   \end{tacticstable}
+\newenvironment{tacticstable}{%
+  \par\medskip\noindent
+  \begin{tabularx}{\linewidth}{|l|X|X|X|}
+  \hline
+  \textbf{Scenario} & \textbf{Tactic (4e name, page)} & \textbf{Realised in} & \textbf{Trade-off}\\
+  \hline
+}{%
+  \end{tabularx}\par\medskip
+}
+\newcommand{\tacticrow}[4]{#1 & #2 & #3 & #4\\\hline}
+
+% ---- notapplicable: an unused SEI section shown as a deliberate decision ----------
+\newenvironment{notapplicable}{%
+  \par\medskip\noindent\textbf{Not applicable.}\ \ignorespaces
+}{%
+  \par\medskip
+}
+
+% ---- \todo: a visible marker; scripts/lint.sh --main rejects it on main -----------
+\newcommand{\todo}[1]{%
+  \par\medskip\noindent
+  \fbox{\parbox{0.96\linewidth}{\textbf{TODO:}\ \itshape #1}}%
+  \par\medskip
+}

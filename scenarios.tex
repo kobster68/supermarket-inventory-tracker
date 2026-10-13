@@ -1,0 +1,44 @@
+% scenarios.tex --- the frozen list of quality-attribute scenario identifiers.
+%
+% FROZEN CONTRACT. Adding or renaming an identifier is a contract change: open a
+% small, separate pull request before using a new ID, never change it on a slice
+% branch. Slice 1 (issue #2) writes the body of each scenario under its label
+% scn:<ID>; Slices 3 and 4 reference the IDs from day one.
+%
+% Defines:
+%   \scenarioid{AV-1}  prints the ID and declares \label{scn:AV-1}
+%                      (used once per ID, inside \scenariotable)
+%   \scnref{AV-1}      references an ID elsewhere (declares no label)
+%   \scenariotable     renders the frozen list as a table (invoked from the
+%                      introduction of section 2.1.3)
+
+\newcommand{\scenarioid}[1]{\label{scn:#1}\texttt{#1}}
+\newcommand{\scnref}[1]{\hyperref[scn:#1]{\texttt{#1}}}
+
+\newcommand{\scenariotable}{%
+  \par\medskip\noindent
+  \begin{tabularx}{\linewidth}{|l|X|}
+    \hline
+    \textbf{Scenario ID} & \textbf{Title}\\\hline
+    \scenarioid{AV-1}   & A store loses the WAN link to the \DC\\\hline
+    \scenarioid{AV-2}   & A store product event is lost between store and \DC\\\hline
+    \scenarioid{AV-3}   & The \CentralMasterInventory process crashes at the \DC\\\hline
+    \scenarioid{PERF-1} & One store sustains its full event rate (100 events/s)\\\hline
+    \scenarioid{PERF-2} & All ten stores at full rate reach the \DC (1,000 events/s)\\\hline
+    \scenarioid{PERF-3} & A manager report aggregates nested product families under load\\\hline
+    \scenarioid{SEC-1}  & An unauthorized actor tries to read or modify an inventory database\\\hline
+    \scenarioid{SEC-2}  & An attacker intercepts store--\DC communication\\\hline
+    \scenarioid{SEC-3}  & A manager acts outside their authorized scope\\\hline
+    \scenarioid{SCAL-1} & The chain grows from three stores to ten\\\hline
+    \scenarioid{SCAL-2} & A new alerting client subscribes to the \CFE at runtime\\\hline
+    \scenarioid{USE-1}  & A store manager produces a shipping order with minimal training\\\hline
+    \scenarioid{USE-2}  & A \DC manager interprets the three report types\\\hline
+    \scenarioid{MOD-1}  & A new client type is added to receive \InventoryEvent alerts\\\hline
+    \scenarioid{MOD-2}  & The product-family hierarchy gains a nesting level\\\hline
+    \scenarioid{INT-1}  & An external system is integrated over the \IEP\\\hline
+    \scenarioid{INT-2}  & A variable number of alerting clients are added through the \CFE\\\hline
+    \scenarioid{TEST-1} & The guaranteed-delivery path is verified under message loss\\\hline
+    \scenarioid{TEST-2} & Availability detection and failover timing are verified\\\hline
+    \scenarioid{PORT-1} & A store or \DC node is moved to a different platform\\\hline
+  \end{tabularx}\par\medskip
+}
