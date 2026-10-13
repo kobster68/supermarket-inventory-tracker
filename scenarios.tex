@@ -17,7 +17,7 @@
 
 \newcommand{\scenariotable}{%
   \par\medskip\noindent
-  \begin{tabularx}{\linewidth}{|l|X|}
+  \begin{tabular}{|l|>{\raggedright\arraybackslash}p{0.78\linewidth}|}
     \hline
     \textbf{Scenario ID} & \textbf{Title}\\\hline
     \scenarioid{AV-1}   & A store loses the WAN link to the \DC\\\hline
@@ -40,5 +40,5 @@
     \scenarioid{TEST-1} & The guaranteed-delivery path is verified under message loss\\\hline
     \scenarioid{TEST-2} & Availability detection and failover timing are verified\\\hline
     \scenarioid{PORT-1} & A store or \DC node is moved to a different platform\\\hline
-  \end{tabularx}\par\medskip
+  \end{tabular}\par\medskip
 }

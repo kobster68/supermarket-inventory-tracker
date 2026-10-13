@@ -55,9 +55,9 @@
 % frozen label scn:<ID> declared in scenarios.tex.
 \newcommand{\qascenario}[7]{%
   \par\medskip\noindent
-  \begin{tabularx}{\linewidth}{|>{\bfseries}l|X|}
+  \begin{tabular}{|>{\bfseries\raggedright\arraybackslash}p{0.26\linewidth}|>{\raggedright\arraybackslash}p{0.62\linewidth}|}
     \hline
-    \multicolumn{2}{|l|}{\textbf{Quality-attribute scenario~\scnref{#1}}}\\
+    \multicolumn{2}{|l|}{\textbf{Quality-attribute scenario}~\scnref{#1}}\\
     \hline
     Source            & #2\\\hline
     Stimulus          & #3\\\hline
@@ -65,7 +65,7 @@
     Environment       & #5\\\hline
     Response          & #6\\\hline
     Response measure  & #7\\\hline
-  \end{tabularx}\par\medskip
+  \end{tabular}\par\medskip
 }
 
 % ---- Tactics table: header environment + one-row macro ---------------------------
@@ -76,12 +76,16 @@
 %   \end{tacticstable}
 \newenvironment{tacticstable}{%
   \par\medskip\noindent
-  \begin{tabularx}{\linewidth}{|l|X|X|X|}
+  \begin{tabular}{%
+    |>{\raggedright\arraybackslash}p{0.11\linewidth}%
+    |>{\raggedright\arraybackslash}p{0.25\linewidth}%
+    |>{\raggedright\arraybackslash}p{0.26\linewidth}%
+    |>{\raggedright\arraybackslash}p{0.20\linewidth}|}
   \hline
   \textbf{Scenario} & \textbf{Tactic (4e name, page)} & \textbf{Realised in} & \textbf{Trade-off}\\
   \hline
 }{%
-  \end{tabularx}\par\medskip
+  \end{tabular}\par\medskip
 }
 \newcommand{\tacticrow}[4]{#1 & #2 & #3 & #4\\\hline}
 
