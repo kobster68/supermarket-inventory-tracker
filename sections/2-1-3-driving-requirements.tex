@@ -1,0 +1,25 @@
+% Section 2.1.3 Significant Driving Requirements
+% Owner: Slice 1 (issue #2). Step 0 seeds the frozen scenario-ID list and one worked
+% quality-attribute scenario (AV-1) as a template; Slice 1 writes the remaining bodies.
+\subsubsection{Significant Driving Requirements}
+\label{sec:driving-requirements}
+
+The quality-attribute requirements that drive the architecture are recorded as
+six-part scenarios. Each scenario has a frozen identifier; the full set of
+identifiers and their one-line titles is listed below, and Slice~1 writes the body of
+each scenario under its identifier.
+
+\scenariotable
+
+As a worked example and a template for the rest, the availability scenario
+\scnref{AV-1} is given in full.
+
+\qascenario{AV-1}
+  {The wide-area network between a store and the \DC (external physical infrastructure).}
+  {An omission fault: the store loses its network link to the \DC.}
+  {The communication channel between the \StoreAgent and the \CFE.}
+  {Normal operation.}
+  {The \StoreAgent keeps serving reads and updates against the \StoreLocalInventory, logs the fault, and appends each outbound \InventoryEvent to the durable \Outbox for delivery when the link returns.}
+  {The \StoreLocalInventory stays readable and updatable at least 99\% of the time; this single outage lasts no more than 30 minutes; no buffered event is lost on reconnect.}
+
+\todo{To be completed in Slice 1 (issue \#2): restate every functional and quality requirement from the brief, and write a six-part scenario for each remaining identifier above using the brief's numbers.}

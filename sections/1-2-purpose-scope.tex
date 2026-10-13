@@ -1,0 +1,25 @@
+% Section 1.2 Purpose and Scope of the SAD
+% Boilerplate carried by Step 0: real, paraphrased content. Owner for later edits:
+% Slice 1 (issue #2). Boilerplate paraphrased from the SEI Views and Beyond template.
+\subsection{Purpose and Scope of the SAD}
+\label{sec:purpose-scope}
+
+This document specifies the software architecture of the Regional Supermarket
+Inventory Tracking System, which tracks inventory across a chain of supermarket
+stores and a central distribution center and drives the shipping orders that move
+product from the distribution center to the stores. It is the single place where
+the architecture is recorded. Following the SEI Views and Beyond template, we
+document the architecture as a set of views together with the information that
+applies across views.
+
+We treat a design decision as architectural, and therefore record it here, when it
+concerns the elements of the system, their externally visible properties, and the
+relationships among them; we leave a decision to downstream design when it concerns
+only the private internals of a single element (Bass, Clements, and Kazman 2).
+
+This first draft is a thin vertical slice. It carries one key view in full --- a
+Components-and-Connectors view of the runtime system --- and a full interface
+specification for the key component, the \CFE. The remaining required views, a
+Module view and an Allocation view, and the sections that depend on them, are named
+and scoped here but deferred to the second draft. Every section that is not yet
+written says so explicitly rather than being omitted.

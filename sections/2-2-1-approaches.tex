@@ -1,0 +1,20 @@
+% Section 2.2.1 Architectural Approaches
+% Owner: Slice 4 (issue #5). Step 0 seeds one worked tactics-table row (AV-1) as a
+% template; Slice 4 writes the baseline prose, the system-wide rationale and rejected
+% alternatives, and the remaining tactics rows.
+\subsubsection{Architectural Approaches}
+\label{sec:approaches}
+
+The tactics chosen for each quality attribute are recorded in a table that ties each
+scenario to a tactic --- named and paged against the fourth edition of
+\emph{Software Architecture in Practice} --- to where the tactic appears in the
+design, and to its trade-off. One row is seeded here as a worked example.
+
+\begin{tacticstable}
+\tacticrow{\scnref{AV-1}}
+  {Graceful degradation, a recover-from-faults tactic (Bass, Clements, and Kazman 60)}
+  {The \StoreAgent keeps serving the \StoreLocalInventory while the \Outbox buffers outbound events for replay on reconnect.}
+  {Store-local availability is bought at the cost of the \CentralMasterInventory being briefly stale --- an availability-for-consistency trade-off.}
+\end{tacticstable}
+
+\todo{To be completed in Slice 4 (issue \#5): the baseline in prose, the system-wide rationale and the rejected alternatives (synchronous client--server, federated brokers), and a tactics row for every scenario identifier, including a store-node recovery tactic for the 30-minute cap and the security tactics presented as options.}

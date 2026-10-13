@@ -1,0 +1,31 @@
+% Section 6.2 Glossary
+% Seeded by Step 0 with the settled element and domain terms, one sentence each.
+% Slice 4 (issue #5) extends it. This is the one file under sections/ that writes the
+% multi-word element names in full (it defines them), so the element-name lint
+% excludes it.
+\subsection{Glossary}
+\label{sec:glossary}
+
+\begin{description}[style=nextline,leftmargin=0pt]
+\item[Store Agent] The runtime component in each store that receives inventory events from the store's point-of-sale system (through the POS Adapter) and from local stock operations, applies them to the Store-Local Inventory, and forwards them to the distribution center through the Outbox; it is restartable from the durable Outbox and a local snapshot within the 30-minute recovery cap.
+\item[Store-Local Inventory] The store's own copy of its inventory, updated locally first so it stays readable and current with no wide-area network.
+\item[Outbox] The durable, ordered queue inside the Store Agent that holds inventory events until the Communications Front-End acknowledges them (store-and-forward for guaranteed delivery).
+\item[Communications Front-End (CFE)] The publish--subscribe broker at the distribution center that persists each inventory event, acknowledges it, and publishes it by topic to every subscriber; it is the key component of this draft, and its interface is the Inventory Exchange Protocol.
+\item[Inventory Exchange Protocol (IEP)] The provided-and-required interface of the Communications Front-End: publish, acknowledge, subscribe and unsubscribe by topic, replay-from-sequence, and resync, over the message types Inventory Event, Acknowledgement, and Subscription.
+\item[Inventory Event] One change to a store's or the distribution center's stock --- event ID, source, product, quantity delta, timestamp, and per-source sequence number --- emitted at up to 100 per second per store.
+\item[Acknowledgement] The confirmation the Communications Front-End returns once it has durably persisted an inventory event.
+\item[Central Master Inventory] The authoritative record of all store and distribution-center inventory, built by subscribing to every inventory event from every Store Agent and the DC Agent.
+\item[DC Agent] The runtime component at the distribution center that publishes the center's own inventory events (goods receipts and shipment dispatches) through the Communications Front-End, so the master record also covers distribution-center stock.
+\item[Subscriber] Any component that subscribes to the Communications Front-End; the named subscribers are the Central Master Inventory, Shipping-Order Generation, the Store-Tracking Client, and the Reporting Client, and their number is variable by design.
+\item[Shipping-Order Generation] The distribution-center subscriber that computes shipping orders from minimum stock quantities and real-time sales and sends purchase and shipping orders to the supplier system through the Supplier Gateway.
+\item[Store-Tracking Client] A subscriber that follows inventory events to track stock at the store level.
+\item[Reporting Client] A subscriber that answers manager queries such as lowest stock, overstocked items, and the total value of a product family.
+\item[POS Adapter] The boundary element inside the Store Agent that turns the external point-of-sale system's sales records into inventory events.
+\item[Supplier Gateway] The boundary element at the distribution center that exchanges orders and goods-receipt confirmations with the external supplier/ERP system.
+\item[Store] One supermarket in the regional chain; it holds a local copy of its own inventory and must be able to read it 99\% of the time.
+\item[Distribution Center (DC)] The central hub that ships product to the stores and hosts the Communications Front-End and the Central Master Inventory.
+\item[External system] A system outside our boundary reached through a defined interface --- the point-of-sale system at each store and the supplier/ERP system at the distribution center.
+\item[Product family] A grouping of products that can be nested to an arbitrary depth.
+\item[Scenario ID] The frozen identifier of a quality-attribute scenario (for example, \texttt{AV-1}) that the interface specification and the tactics table reference.
+\item[Key view] The Components-and-Connectors view of the runtime system delivered in this first draft; the key component it specifies is the Communications Front-End.
+\end{description}

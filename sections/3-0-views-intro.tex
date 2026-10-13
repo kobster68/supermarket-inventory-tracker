@@ -1,0 +1,40 @@
+% Section 3 (Views) introduction
+% Boilerplate carried by Step 0: names the three view categories and classifies the
+% delivered view. Slice 2 (issue #3) completes the view itself (Section 3.1).
+This section presents the architecture as views. Following the fourth edition of
+\emph{Software Architecture in Practice} and the SEI Views and Beyond template,
+architectural views fall into three categories according to the kind of element they
+show (Bass, Clements, and Kazman 333):
+\begin{itemize}[nosep]
+  \item \textbf{Module views}, whose elements are implementation units --- the
+  system's code structure;
+  \item \textbf{Components-and-Connectors (C\&C) views}, whose elements are runtime
+  components and the connectors through which they interact;
+  \item \textbf{Allocation views}, which map software elements onto the environment
+  in which they are built and run.
+\end{itemize}
+The assignment requires all three. This first draft delivers one of them in full ---
+the C\&C view of the runtime system --- and defers the Module and Allocation views to
+the second draft. The table below classifies each required view; the C\&C row is the
+view delivered here, and the Module and Allocation rows are listed so that the
+required structure is visible even in a draft.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{|X|l|c|c|c|}
+\hline
+\textbf{Name of view} & \textbf{Viewtype} & \textbf{Module?} & \textbf{C\&C?} & \textbf{Allocation?}\\\hline
+Runtime C\&C view (key view) & Components-and-Connectors & No & Yes & No\\\hline
+Module view (second draft) & Module & Yes & No & No\\\hline
+Allocation view (second draft) & Allocation & No & No & Yes\\\hline
+\end{tabularx}
+\end{center}
+
+The views in this document share one notation; its key is reproduced in
+Figure~\ref{fig:diagram-key}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.82\linewidth]{example-key}
+\caption{Diagram key: the shared notation used by the views in this document, shown on an illustrative Components-and-Connectors fragment.}
+\label{fig:diagram-key}
+\end{figure}
