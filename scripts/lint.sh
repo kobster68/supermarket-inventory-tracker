@@ -37,7 +37,20 @@ for p in "${hygiene_patterns[@]}"; do grep_args+=(-e "$p"); done
 hygiene_hits=$(git grep -niIE "${grep_args[@]}" -- . 2>&1)
 hygiene_rc=$?
 if [ "$hygiene_rc" -ge 2 ]; then
-  echo "LINT FAIL: git grep could not run the hygiene check (exit $hygiene_rc):" >&2
+  # git grep could not run (for example exit 128 on "dubious ownership" when the
+  # checkout is owned by another uid inside a container). Fall back to a recursive
+  # grep over the tree with the build artifacts and .git excluded.
+  echo "    note: git grep exited $hygiene_rc; falling back to a recursive grep" >&2
+  hygiene_hits=$(grep -rniIE "${grep_args[@]}" . \
+    --exclude-dir=.git \
+    --exclude='*.pdf' --exclude='*.svg' --exclude='*.png' --exclude='*.eps' \
+    --exclude='*.aux' --exclude='*.log' --exclude='*.out' --exclude='*.toc' \
+    --exclude='*.lof' --exclude='*.lot' --exclude='*.fls' \
+    --exclude='*.fdb_latexmk' --exclude='*.synctex.gz' 2>&1)
+  hygiene_rc=$?
+fi
+if [ "$hygiene_rc" -ge 2 ]; then
+  echo "LINT FAIL: could not run the hygiene check (exit $hygiene_rc):" >&2
   printf '%s\n' "$hygiene_hits" >&2
   status=1
 elif [ "$hygiene_rc" -eq 0 ]; then
