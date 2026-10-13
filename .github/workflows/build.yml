@@ -1,0 +1,59 @@
+name: Build SAD
+
+# Compile the architecture document on every push to main and every pull request.
+# Reviewers read the uploaded main.pdf, not the diff.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Pinned, immutable TeX Live image (full scheme: pdflatex, latexmk, TeX Gyre
+    # Termes, biblatex and biber are all present). PlantUML, Graphviz, rsvg-convert
+    # and pdfinfo are added with apt below.
+    container:
+      image: texlive/texlive:TL2025-historic
+
+    steps:
+      - name: Install git (needed by actions/checkout)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install PlantUML, Graphviz, rsvg-convert, and pdfinfo
+        run: |
+          apt-get install -y --no-install-recommends \
+            plantuml graphviz librsvg2-bin poppler-utils default-jre-headless
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Render diagrams
+        run: bash scripts/render-diagrams.sh
+
+      - name: Build main.pdf
+        run: bash scripts/build.sh
+
+      - name: Lint
+        run: bash scripts/lint.sh
+
+      - name: Fail if main.pdf is missing
+        run: test -f main.pdf
+
+      - name: Upload main.pdf
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-pdf
+          path: main.pdf
+          if-no-files-found: error
+
+      - name: Print page count
+        run: pdfinfo main.pdf | grep -i '^Pages:'
