@@ -1,0 +1,30 @@
+@startuml
+' Toolchain proof and the shared legend style for the SAD.
+' Renders through scripts/render-diagrams.sh. It is a small, illustrative fragment,
+' not the delivered Components-and-Connectors view (that is authored in Slice 2).
+!include style.puml
+title Diagram key: notation legend (illustrative C&C fragment)
+
+skinparam componentStyle rectangle
+
+node "POS system" as POS #dae8fc
+component "Store Agent" as SA #d5e8d4
+queue "Outbox" as OB #e1d5e7
+component "Communications\nFront-End" as CFE #fff2cc
+component "Subscriber" as SUB #fff2cc
+
+POS --> SA : <<external>>\nsales records
+SA --> OB : append\n(store-and-forward)
+OB --> CFE : publish\n[secure channel]
+CFE --> SUB : notify\n(n-ary publish-subscribe)
+
+legend right
+|= Notation |= Meaning |
+| rectangle, green fill | store-side runtime component |
+| rectangle, yellow fill | distribution-center runtime component |
+| queue shape, purple fill | durable, ordered persistent store |
+| node, blue fill | external system / boundary element |
+| solid arrow | connector; label names the protocol or interaction |
+| [secure channel] | a store-to-DC connector that is a secure channel |
+endlegend
+@enduml

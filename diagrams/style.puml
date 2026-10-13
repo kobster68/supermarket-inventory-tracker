@@ -1,0 +1,28 @@
+' Shared PlantUML style for the Supermarket Inventory Tracking System SAD.
+' Included by every diagram with:  !include style.puml
+'
+' This file is an include, not a diagram: it carries no start directive, so the
+' render script and the lint skip it. Every real diagram pulls in these settings so
+' colour, font and arrow styling stay identical across authors and views.
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Serif
+skinparam defaultFontSize 12
+skinparam ArrowColor #334155
+skinparam ArrowFontColor #334155
+skinparam ComponentBorderColor #475569
+skinparam ComponentBackgroundColor #f8fafc
+skinparam InterfaceBorderColor #475569
+skinparam DatabaseBorderColor #475569
+skinparam QueueBorderColor #475569
+skinparam NodeBorderColor #475569
+skinparam NoteBorderColor #64748b
+skinparam NoteBackgroundColor #f8fafc
+
+' Shared colour vocabulary. Use these exact fills so the same kind of element
+' reads the same way in every view:
+'   #dae8fc  external system / boundary element
+'   #d5e8d4  store-side runtime element
+'   #fff2cc  distribution-center runtime element
+'   #e1d5e7  persistent store
