@@ -1,0 +1,72 @@
+@startuml
+' Primary presentation of the Components-and-Connectors key view.
+' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+!include style.puml
+title Components-and-Connectors view --- primary presentation
+
+skinparam componentStyle rectangle
+skinparam nodesep 14
+skinparam ranksep 26
+skinparam rectangleBorderColor #475569
+
+' ---- one store, drawn in full (x N) ------------------------------------------
+rectangle "Store  (one of N: 3 now, up to 10)" as STORE {
+  component "POS Adapter" as POSAD #dae8fc
+  component "Store Agent" as SA #d5e8d4
+  database "Store-Local\nInventory" as SLI #e1d5e7
+  queue "Outbox" as OB #e1d5e7
+}
+node "External\nPOS system" as POS #dae8fc
+
+' ---- distribution center ------------------------------------------------------
+rectangle "Distribution Center" as DCB {
+  component "Communications\nFront-End\n(pub-sub broker)" as CFE #fff2cc
+  database "CFE event\nstore" as CFEDB #e1d5e7
+  component "DC Agent" as DCA #fff2cc
+  component "Central Master\nInventory" as CMI #fff2cc
+  database "Master\ninventory DB" as CMIDB #e1d5e7
+  component "Shipping-Order\nGeneration" as SOG #fff2cc
+  component "Supplier Gateway" as SG #dae8fc
+  component "Store-Tracking\nClient" as STC #fff2cc
+  component "Reporting Client" as RC #fff2cc
+}
+node "External\nsupplier/ERP system" as ERP #dae8fc
+
+' ---- connectors ---------------------------------------------------------------
+POS --> POSAD : <<request/reply>>\nsales records
+POSAD --> SA : Inventory Events
+SA --> SLI : <<data access>>\napply, read
+SA --> OB : <<data access>>\nappend (ordered)
+OB --> CFE : <<pub-sub>> publish\nIEP over TLS [secure]
+CFE --> SA : <<pub-sub>> acknowledge\nIEP over TLS [secure]
+DCA --> CFE : <<pub-sub>> publish
+CFE --> CFEDB : <<data access>>\npersist
+CFE --> CMI : <<pub-sub>> notify
+CFE --> SOG : <<pub-sub>> notify
+CFE --> STC : <<pub-sub>> notify
+CFE --> RC : <<pub-sub>> notify
+CMI --> CMIDB : <<data access>>
+SOG --> CMI : <<request/reply>> read
+RC --> CMI : <<request/reply>> query
+STC --> CMI : <<request/reply>> query
+SOG --> SG : orders
+SG --> ERP : <<request/reply>>\norders, receipts
+
+note bottom of CFE
+  One n-ary publish-subscribe connector (the Inventory
+  Exchange Protocol): the CFE broker joins every publisher
+  (store Outboxes, DC Agent) to every subscriber. Drawn once.
+end note
+
+legend right
+|= Notation |= Meaning |
+| green fill | store-side runtime component |
+| yellow fill | distribution-center runtime component |
+| blue fill | external system or boundary element |
+| purple database / queue | durable, ordered persistent store |
+| <<pub-sub>> | n-ary publish-subscribe connector (IEP) |
+| <<request/reply>> | synchronous request/reply connector |
+| <<data access>> | a component reading or writing its own store |
+| [secure] | a store-to-DC network leg carried over a secure channel |
+endlegend
+@enduml

@@ -1,0 +1,37 @@
+@startuml
+' Behavior 2: WAN outage -> Outbox buffering -> reconnect -> replay.
+' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+!include style.puml
+title Components-and-Connectors view --- behavior: outage, buffering, replay
+
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 230
+
+participant "POS Adapter" as POSAD #dae8fc
+participant "Store Agent" as SA #d5e8d4
+database "Store-Local\nInventory" as SLI #e1d5e7
+queue "Outbox" as OB #e1d5e7
+participant "Communications\nFront-End" as CFE #fff2cc
+participant "Subscribers" as SUB #fff2cc
+
+== WAN link down ==
+loop every sale during the outage
+  POSAD -> SA : Inventory Event
+  SA -> SLI : apply (reads and writes continue)
+  SA -> OB : append
+end
+OB -x CFE : publish fails; events held
+note over OB : buffers in order\n(~180,000 events per 30 min at 100/s)
+
+== WAN link restored ==
+OB -> CFE : replay-from-sequence (last acknowledged)
+CFE --> OB : acknowledge each
+CFE -> SUB : notify (gap filled)
+note over SUB : duplicates ignored by event ID;\nresync closes any remaining gap
+
+legend right
+  Store-local reads and writes never stop during the
+  outage. On reconnect the Outbox replays from the last
+  acknowledged sequence number, so no event is lost.
+endlegend
+@enduml
