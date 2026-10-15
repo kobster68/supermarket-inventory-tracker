@@ -83,4 +83,106 @@ events from store 17 but exclude other stores. Matching uses path segments, so
 no message-schema change (\scnref{MOD-2}); topic subscriptions support new clients
 without changing publishers (\scnref{MOD-1}, \scnref{INT-2}).
 
-\todo{To be completed in Slice 3 (issue \#4): the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; semantics; error handling; usage restrictions; variability; detailed element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
+\textbf{Operation contracts.}
+The signatures below are logical message syntax, not programming-language calls.
+All requests require an authenticated, authorized session using version 1.0.
+Common errors are \texttt{INVALID} (malformed fields), \texttt{UNAUTHORIZED}
+(identity or scope denied), \texttt{UNAVAILABLE} (required service unavailable),
+\texttt{BUSY(retryAfterMs)} (capacity exhausted), and \texttt{TIMEOUT}.
+\texttt{retryAfterMs} is a positive integer delay in milliseconds.
+A timeout leaves the outcome uncertain; retry with the same identifiers rather
+than inventing a new event. Specific errors and successful postconditions follow.
+
+\begin{description}[leftmargin=1em,style=nextline]
+\item[\opPublish\texttt{(event)}]
+\emph{Meaning/preconditions:} A publisher submits the defined event record for
+its authorized source; a new event's sequence must be the next expected value.
+\emph{Postconditions:} The \CFE durably stores the event and its ID/sequence
+association before emitting \opAck, and makes it available to matching
+subscriptions. An identical retry returns another acknowledgement without
+creating another log entry; subscribers may still see duplicate deliveries.
+\emph{Errors:} Common errors; \texttt{OUT\_OF\_ORDER(expectedSequence)} for a
+gap, \texttt{CONFLICT} for a reused ID or source/sequence with different content,
+and \texttt{UNKNOWN\_PRODUCT}. Rejected events do not advance the source sequence.
+
+\item[\opAck\texttt{(acknowledgement)}]
+\emph{Meaning/preconditions:} This is a \CFE-to-publisher response, not a client
+request to mark an event accepted. It contains the defined acknowledgement
+record and requires prior durable acceptance of the identified event.
+\emph{Postconditions:} The publishing \Outbox records the maximum of its saved
+position and \texttt{acceptedThrough} before pruning; repeated or older
+confirmations cannot move its position backwards. Subscriber processing is
+unaffected.
+\emph{Errors:} A receiver rejects malformed, unauthenticated or mismatched
+confirmations as \texttt{INVALID} or \texttt{UNAUTHORIZED} without pruning.
+A lost response causes a publisher timeout and safe retry of the original event.
+
+\item[\opSubscribe\texttt{(subscriberId, sourceFilter, familyFilter)}]
+\emph{Meaning/preconditions:} An authorized client selects the defined topic
+filters and establishes a receive channel; both filters must be valid and their
+entire requested scope authorized.
+\emph{Postconditions:} The \CFE durably registers the subscription and returns
+its record plus \texttt{startAfter}, a map from each selected source to its
+current highest contiguous sequence (zero if none). Live delivery includes
+matching events accepted after these positions. An identical request by the same
+client returns the existing subscription and original positions, making retries
+safe. Historical delivery is requested through \opReplay; filtered deliveries
+need not have consecutive sequence numbers.
+\emph{Errors:} Common errors and \texttt{UNKNOWN\_SUBSCRIBER} if the client
+identity has not been provisioned. Invalid filters do not create a subscription.
+
+\item[\opUnsubscribe\texttt{(subscriberId, subscriptionId)}]
+\emph{Meaning/preconditions:} The authenticated owner removes its subscription.
+\emph{Postconditions:} The registry records removal and stops scheduling new
+deliveries; already in-flight messages may arrive. Repeating a removal by its
+owner returns success, using a retained ownership record. It does not erase the
+event log or the client's applied inventory state.
+\emph{Errors:} Common errors and \texttt{UNKNOWN\_SUBSCRIPTION} for an identifier
+with no active or retained removal record; another client's identifier is denied.
+
+\item[\opReplay\texttt{(role, source, afterSequence, subscriptionId?, events?)}]
+\emph{Meaning/preconditions:} \texttt{role} is \texttt{publisher} or
+\texttt{subscriber}; \texttt{afterSequence} is a nonnegative, exclusive cursor.
+For a publisher, it is the \Outbox's saved acknowledgement position, and
+\texttt{events} is an ordered batch of retained events after that position.
+Each event is processed under the \opPublish contract and acknowledged only
+after persistence; a partial failure reports the first failed event, and retries
+may include already accepted entries. For a subscriber, \texttt{subscriptionId}
+must name its active subscription, \texttt{events} is absent, and the cursor is
+its last durably processed position for this source.
+\emph{Postconditions:} Subscriber replay returns matching stored events in
+source order through a captured high-water mark, followed by
+\texttt{scannedThrough} (that mark). Live delivery for this source is held behind
+replay so that the transition has no gap; retries may duplicate events.
+The client persists applied changes, duplicate-detection state and its cursor
+atomically before advancing it. It may advance through filtered-out events only
+after processing all returned events through \texttt{scannedThrough}.
+\emph{Errors:} Common errors, publisher errors from \opPublish,
+\texttt{UNKNOWN\_SUBSCRIPTION}, \texttt{INVALID\_CURSOR} (ahead of the stored
+high-water mark for subscriber replay), or \texttt{HISTORY\_EXPIRED} (required
+history is no longer retained). A publisher cursor ahead of the \CFE's durable
+position instead requires \opResync; the \CFE must not silently skip the gap.
+
+\item[\opResync\texttt{(role, source, lastKnownSequence, subscriptionId?)}]
+\emph{Meaning/preconditions:} An authorized publisher or active subscriber
+reconciles recovery positions after a gap or uncertain restart. The sequence is
+nonnegative; subscriber requests identify their subscription.
+\emph{Postconditions:} Returns \texttt{acceptedThrough},
+\texttt{earliestRetained} (the first replayable sequence, or
+\texttt{acceptedThrough + 1} for an empty retained log), and a recovery action.
+Publishers resend retained entries after the \CFE's position using \opReplay;
+subscribers replay after their own durable cursor when history covers the gap.
+This operation reports positions; it does not reset sequences, overwrite stock,
+or manufacture missing events. If publisher entries have been pruned despite a
+lower \CFE position, or subscriber history has expired, it returns
+\texttt{RECOVERY\_REQUIRED}: restore a consistent snapshot/backup with its source
+positions before replay. Such restoration is an environmental recovery procedure,
+not an additional operation. Catch-up is not reported as complete until the gap
+has actually been recovered.
+\emph{Errors:} Common errors, \texttt{UNKNOWN\_SUBSCRIPTION},
+\texttt{INVALID\_CURSOR} for a subscriber position beyond accepted history, and
+\texttt{RECOVERY\_REQUIRED} with the available bounds when automatic replay
+cannot recover the gap.
+\end{description}
+
+\todo{To be completed in Slice 3 (issue \#4): shared semantics and error-handling policy; usage restrictions; variability; detailed element requirements; quality properties; rationale; scenario coverage; and two example exchanges.}
