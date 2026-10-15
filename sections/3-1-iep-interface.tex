@@ -1,9 +1,15 @@
 % Section 3.1 (Interfaces): the interface of the key component.
 % Owner: Slice 3 (issue #4). Input from Section 3.1's Interfaces subsection
 % (label sec:cc-interfaces) under a stable heading.
-\paragraph{Interface specification.}
+% The SEI template places Interfaces within the view packet's Element Catalog.
+% It prescribes no further internal interface outline;
+% the subheadings below organize the interface details required by issue #4.
+\paragraph{\IEP interface specification.}
 \label{sec:iep}
-\textbf{Identity, purpose, and version.}
+We document the externally visible interface of the \CFE as part of the view's
+element catalog.
+
+\subparagraph{Identity, purpose, and version.}
 We define version 1.0 of the \IEP, the interface of the \CFE at the \DC.
 It connects inventory-event publishers at stores and the \DC to a variable set of
 subscribers, including the \CentralMasterInventory, \ShippingOrderGen,
@@ -11,7 +17,7 @@ subscribers, including the \CentralMasterInventory, \ShippingOrderGen,
 record events, confirm receipt, and distribute them to interested subscribers
 without making store-local inventory updates wait for the WAN.
 
-\textbf{Provided side.}
+\subparagraph{Provided interface.}
 The \CFE provides \opPublish for submitting an \InventoryEvent and returns
 \opAck only after durable persistence. It provides \opSubscribe and
 \opUnsubscribe for selecting source and product-family topics at runtime,
@@ -19,7 +25,7 @@ delivers matching events, and provides \opReplay and \opResync for recovery.
 Delivery is at least once; event IDs support idempotent processing. The publishing
 \Outbox owns the last acknowledged per-source sequence number used for recovery.
 
-\textbf{Required side.}
+\subparagraph{Required interface.}
 The \CFE requires a durable event store, a subscriber registry that retains
 subscription and recovery state across restarts, an authenticated secure channel,
 and a clock for timestamps and timeout measurement. Publishers must supply stable
@@ -28,7 +34,7 @@ for retry. Subscribers must receive matching events and process retries
 idempotently by event ID. We specify the operations, messages and environmental
 requirements in the remainder of this interface definition.
 
-\textbf{Message types and topics.}
+\subparagraph{Data types and topic naming.}
 We use the following logical records in version 1.0. Field names are case-sensitive;
 identifiers are nonempty, opaque strings compared exactly. Transport encoding is
 left to the implementation, which must preserve these field types and values.
@@ -83,7 +89,7 @@ events from store 17 but exclude other stores. Matching uses path segments, so
 no message-schema change (\scnref{MOD-2}); topic subscriptions support new clients
 without changing publishers (\scnref{MOD-1}, \scnref{INT-2}).
 
-\textbf{Operation contracts.}
+\subparagraph{Resources and operations.}
 The signatures below are logical message syntax, not programming-language calls.
 All requests require an authenticated, authorized session using version 1.0.
 Common errors are \texttt{INVALID} (malformed fields), \texttt{UNAUTHORIZED}
@@ -185,7 +191,7 @@ has actually been recovered.
 cannot recover the gap.
 \end{description}
 
-\textbf{Shared delivery rules and usage restrictions.}
+\subparagraph{Semantics, error handling, and usage restrictions.}
 \begin{description}[nosep,leftmargin=1em,style=nextline]
 \item[Initialization and permissions.]
 Before accepting traffic, the \CFE restores its log, deduplication records,
@@ -245,7 +251,7 @@ Retention limits are explicit: expired history requires recovery, never silent
 advancement of a subscriber cursor (\scnref{AV-1}, \scnref{TEST-1}).
 \end{description}
 
-\textbf{Variability, capacity, and quality properties.}
+\subparagraph{Variability and capacity.}
 The assignment workload is 100 events/s per store for up to ten stores:
 1{,}000 new store events/s at the \CFE (\scnref{PERF-1}, \scnref{PERF-2},
 \scnref{SCAL-1}). This excludes the \DCAgent's traffic, retransmissions and
@@ -279,6 +285,7 @@ work: if all $N$ subscribers select every event, the live store load alone
 requires up to $1{,}000N$ event deliveries/s. Capacity and retention are
 deployment settings, not a promise of unlimited scaling.
 
+\subparagraph{Quality properties.}
 For the initial deployment we propose 95th-percentile publish-to-\opAck latency
 of at most 1 second and publish-to-first-delivery latency of at most 2 seconds,
 measured from publisher transmission under the live workload, healthy WAN and
@@ -295,7 +302,7 @@ after which a consistent snapshot/backup is required. Permanent loss of all
 durable copies is outside this guarantee. Idempotent application prevents
 duplicate stock changes; the protocol does not promise exactly-once transport.
 
-\textbf{Required environment and security.}
+\subparagraph{Element requirements.}
 The \CFE needs a transactional, crash-recoverable event store that atomically
 commits events, identity records and per-source positions before \opAck, with
 backup/restore procedures preserving those positions. Its durable subscriber
@@ -315,4 +322,122 @@ for diagnostics, while a monotonic clock measures retry and timeout intervals;
 clock adjustment must not alter ordering or event identity. Replay depends on
 sequence numbers rather than synchronized clocks.
 
-\todo{To be completed in Slice 3 (issue \#4): rationale; scenario coverage; and two example exchanges.}
+\subparagraph{Rationale and design issues.}
+We choose durable local buffering so a sale does not depend on a working WAN,
+and acknowledge at the \CFE persistence boundary so the store can safely release
+its copy without waiting for every subscriber. Waiting for all subscribers would
+let one unavailable client delay every store. At-least-once delivery accepts
+retransmission after uncertain failures; stable event IDs and atomic application
+keep retransmission from changing stock twice. Per-source sequences make gaps
+detectable without imposing a global order on independent stores. Topic selection
+allows new client types without changing publisher code. The cost is storage,
+duplicate-detection state, eventual consistency and bounded recovery history.
+
+We retain the C\&C view's decision that the \Outbox owns the last acknowledged
+publisher position. Subscriber processing positions are separate because durable
+acceptance at the \CFE does not imply that a client has applied the event.
+\opReplay transfers recoverable events; \opResync reconciles positions and
+reports an unrecoverable gap rather than pretending missing deltas can be rebuilt
+from sequence numbers alone. Deployment validation must settle storage headroom,
+retention, subscriber limits and latency targets. The logical signatures leave
+wire encoding open; interoperating implementations must agree on a concrete
+encoding and connection binding before deployment.
+
+\subparagraph{Example exchanges.}
+\emph{Normal publish, acknowledge, and fan-out.}
+Assume an authenticated store-17 publisher, an active authorized subscription
+\texttt{sub-1} selecting \texttt{store/17} and \texttt{food/**}, and both the
+\Outbox acknowledgement position and the \CFE accepted position at 40.
+\begin{enumerate}[nosep,leftmargin=*]
+\item The POS sale reaches the \POSAdapter and then the \StoreAgent.
+One local transaction subtracts one unit of \texttt{milk-1} and appends event
+\texttt{e41} to the \Outbox: source \texttt{store/17}, product \texttt{milk-1},
+\texttt{quantityDelta=-1}, timestamp \texttt{2026-10-15T18:00:00.000Z},
+and \texttt{sequence=41}. The local transaction finishes before WAN transmission.
+\item The \Outbox sends \opPublish\texttt{(e41)} over the secure channel.
+The \CFE validates it and durably commits the event and source position, then
+returns \opAck with \texttt{eventId=e41}, \texttt{source=store/17},
+\texttt{sequence=41} and \texttt{acceptedThrough=41}.
+The \Outbox persists position 41 before pruning the event.
+\item The \CFE fans the stored event out to matching subscribers, including
+\texttt{sub-1} because \texttt{milk-1} belongs to \texttt{food/dairy}.
+Each subscriber atomically applies the delta and records its event ID and cursor.
+If the acknowledgement was lost, an unchanged retry of \texttt{e41} confirms
+acceptance again; subscriber deduplication prevents a second stock decrement.
+\end{enumerate}
+
+\emph{WAN outage, buffering, and replay.}
+Assume the same source has reached position 41 before the WAN fails.
+\begin{enumerate}[nosep,leftmargin=*]
+\item Local reads and updates continue. Transactions append \texttt{e42} and
+\texttt{e43}, with sequences 42 and 43, to the durable \Outbox. Failed transmission
+does not delete either event or advance its saved acknowledgement position.
+\item After reconnecting and authenticating, the \Outbox sends
+\opReplay\texttt{(publisher, store/17, 41, absent, [e42,e43])}.
+The \CFE processes the batch in source order: persist \texttt{e42}, acknowledge
+through 42; persist \texttt{e43}, acknowledge through 43. After each durable
+acceptance it fans the event out to matching subscribers. The \Outbox saves each
+acknowledged position before pruning. If 42 was already accepted before the
+disconnect, its identical retransmission is acknowledged without another log entry.
+\item Subscribers ignore already applied IDs. A subscriber that also lost its
+connection requests \opReplay\texttt{(subscriber, store/17, 41, sub-1, absent)}
+from its own saved cursor, applies returned matching events, then persists the
+returned \texttt{scannedThrough} position before continuing live delivery.
+If positions disagree or history is missing, \opResync reports the retained
+bounds and required recovery action; it does not silently skip missing events.
+\end{enumerate}
+These exchanges preserve the C\&C sequences: local update and append precede
+transmission; \CFE persistence precedes acknowledgement and fan-out; reconnect
+replay starts from the \Outbox's saved acknowledgement position.
+
+\subparagraph{Scenario coverage and responsibility boundaries.}
+The mappings below identify the interface's contribution, not evidence that a
+system-level scenario has passed validation.
+\begin{description}[nosep,leftmargin=1em,style=nextline]
+\item[Availability.]
+\scnref{AV-1}: atomic local updates and durable \Outbox buffering isolate stores
+from WAN failure; \opReplay drains the backlog. \scnref{AV-2}: \opPublish,
+persist-before-\opAck, unchanged retries and event-ID deduplication address lost
+messages and responses. \scnref{AV-3}: subscriber \opReplay and atomic processing
+cursors let the \CentralMasterInventory catch up after restart; \opResync reports
+gaps outside retained history.
+\item[Performance and scalability.]
+\scnref{PERF-1}, \scnref{PERF-2} and \scnref{SCAL-1}: the capacity rule sizes
+\opPublish and publisher \opReplay for the stated store workload and recovery
+traffic. \scnref{SCAL-2}: \opSubscribe and \opUnsubscribe change the client set
+at runtime, subject to declared capacity. \scnref{PERF-3}: independent subscriber
+queues prevent a slow \ReportingClient from blocking ingestion; report queries,
+aggregation algorithms and their response-time guarantees belong to the reporting
+and inventory components, not the \IEP.
+\item[Security.]
+\scnref{SEC-1}: the required-environment rule restricts database access; database
+and operating-system enforcement remain environmental responsibilities.
+\scnref{SEC-2}: every operation and delivery uses an authenticated secure channel.
+\scnref{SEC-3}: source/topic authorization restricts \opPublish, \opSubscribe,
+\opReplay and \opResync; manager permissions on reports and orders must also be
+enforced by the applications serving those requests.
+\item[Modifiability and integration.]
+\scnref{MOD-1}, \scnref{INT-2}: \opSubscribe and \opUnsubscribe decouple client
+types and counts from publishers. \scnref{MOD-2}: hierarchical topic matching
+admits additional family levels without changing the event schema.
+\scnref{INT-1}: the defined event records, operation contracts and errors allow
+an external system's adapter to use \opPublish or \opSubscribe under provisioned
+credentials; translating its native messages remains the adapter's responsibility.
+\item[Testing and portability.]
+\scnref{TEST-1}: \opPublish, \opAck and \opReplay expose IDs and source positions
+for checking recovery under lost events or responses. \scnref{TEST-2}: timeouts,
+\opResync positions and subscriber replay make restart/catch-up observable;
+failure detection and node failover timing require separate deployment tests.
+\scnref{PORT-1}: platform-independent logical records and operation semantics
+allow a replacement implementation to preserve the contract. Migration must
+preserve durable IDs, sequences, acknowledgements and subscriber cursors, and
+implement the agreed wire binding; this interface does not itself move software
+or data between platforms.
+\item[Usability.]
+\scnref{USE-1} and \scnref{USE-2}: \opSubscribe supplies events to
+\ShippingOrderGen and \ReportingClient, but training effort, order-generation
+workflows and report interpretation belong to their user interfaces. We claim
+no direct usability guarantee from the messaging protocol.
+\end{description}
+
+\todo{To be completed in Slice 3 (issue \#4): final PDF/page-budget verification.}
