@@ -3,5 +3,29 @@
 % (label sec:cc-interfaces) under a stable heading.
 \paragraph{Interface specification.}
 \label{sec:iep}
-The \IEP is the provided-and-required interface of the key component, the \CFE.
-\todo{To be completed in Slice 3 (issue \#4): identity and version; the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; data types; semantics; error handling; usage restrictions; variability; element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
+\textbf{Identity, purpose, and version.}
+We define version 1.0 of the \IEP, the interface of the \CFE at the \DC.
+It connects inventory-event publishers at stores and the \DC to a variable set of
+subscribers, including the \CentralMasterInventory, \ShippingOrderGen,
+\StoreTrackingClient and \ReportingClient. Its purpose is to accept and durably
+record events, confirm receipt, and distribute them to interested subscribers
+without making store-local inventory updates wait for the WAN.
+
+\textbf{Provided side.}
+The \CFE provides \opPublish for submitting an \InventoryEvent and returns
+\opAck only after durable persistence. It provides \opSubscribe and
+\opUnsubscribe for selecting source and product-family topics at runtime,
+delivers matching events, and provides \opReplay and \opResync for recovery.
+Delivery is at least once; event IDs support idempotent processing. The publishing
+\Outbox owns the last acknowledged per-source sequence number used for recovery.
+
+\textbf{Required side.}
+The \CFE requires a durable event store, a subscriber registry that retains
+subscription and recovery state across restarts, an authenticated secure channel,
+and a clock for timestamps and timeout measurement. Publishers must supply stable
+event IDs and per-source sequence numbers and retain unacknowledged events durably
+for retry. Subscribers must receive matching events and process retries
+idempotently by event ID. We specify the operations, messages and environmental
+requirements in the remainder of this interface definition.
+
+\todo{To be completed in Slice 3 (issue \#4): the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; data types; semantics; error handling; usage restrictions; variability; detailed element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
