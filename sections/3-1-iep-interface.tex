@@ -254,36 +254,22 @@ advancement of a subscriber cursor (\scnref{AV-1}, \scnref{TEST-1}).
 \subparagraph{Variability and capacity.}
 The assignment workload is 100 events/s per store for up to ten stores:
 1{,}000 new store events/s at the \CFE (\scnref{PERF-1}, \scnref{PERF-2},
-\scnref{SCAL-1}). This excludes the \DCAgent's traffic, retransmissions and
-subscriber fan-out, which need additional capacity. A 30-minute WAN outage at
-that rate requires at least 180{,}000 retained events per store, or 1.8 million
-across ten stores. Actual storage must also cover record size, indexes,
-deduplication metadata and safety margin; these counts are not byte estimates.
-The 99\% local-availability and complete store-to-\DC delivery requirements
-motivate local persistence and retry; protocol rules alone do not establish the
-availability of the store hardware or database (\scnref{AV-1}, \scnref{AV-2}).
+\scnref{SCAL-1}). Additional capacity is needed for \DC events, retries and
+fan-out. System-wide storage sizing and availability analysis belong in
+Section~\ref{sec:analysis-results}.
 
 We propose the following initial deployment targets, not additional assignment
-requirements or measured results: capacity for 2{,}000 accepted store events/s
-during catch-up, including the 1{,}000/s live load; at least 60 minutes of
-subscriber replay history (3.6 million events at the live store rate); and
-publisher replay batches of 1--100 events. At 1{,}000/s of spare acceptance
-capacity, a simultaneous 1.8-million-event backlog takes about 30 minutes to
-drain, provided network, storage and subscriber capacity suffice. Retention must
-cover both outage and catch-up time; 60 minutes is an initial minimum with no
-safety margin in this worst case, so provisioning must increase it for operational
-headroom and additional \DC traffic. Retain event identity records for at least
-the supported retry/replay period; expired identity history requires explicit
-recovery rather than an unverified duplicate acknowledgement.
+requirements or measured results: 1{,}000 live store events/s, expandable to
+2{,}000/s during catch-up; publisher replay batches of 1--100 events; and at least
+60 minutes of subscriber replay history. Deployments must provision additional
+retention for outage and catch-up headroom and retain identity records throughout
+the supported retry/replay period.
 
 \opSubscribe and \opUnsubscribe change the active client set at runtime without
 changing publishers or restarting the \CFE (\scnref{SCAL-2}, \scnref{MOD-1},
 \scnref{INT-2}). There is no fixed protocol limit on client count; each deployment
 publishes and enforces its tested concurrent-subscription and queue limits.
-Reaching a limit returns \texttt{BUSY}. Adding subscribers increases delivery
-work: if all $N$ subscribers select every event, the live store load alone
-requires up to $1{,}000N$ event deliveries/s. Capacity and retention are
-deployment settings, not a promise of unlimited scaling.
+Reaching a limit returns \texttt{BUSY}; client capacity must include fan-out load.
 
 \subparagraph{Quality properties.}
 For the initial deployment we propose 95th-percentile publish-to-\opAck latency
@@ -390,54 +376,33 @@ These exchanges preserve the C\&C sequences: local update and append precede
 transmission; \CFE persistence precedes acknowledgement and fan-out; reconnect
 replay starts from the \Outbox's saved acknowledgement position.
 
-\subparagraph{Scenario coverage and responsibility boundaries.}
-The mappings below identify the interface's contribution, not evidence that a
-system-level scenario has passed validation.
+\subparagraph{Interface scenario coverage.}
+These mappings identify protocol responsibilities; system-wide coverage is in
+Section~\ref{sec:requirements-coverage}.
 \begin{description}[nosep,leftmargin=1em,style=nextline]
 \item[Availability.]
-\scnref{AV-1}: atomic local updates and durable \Outbox buffering isolate stores
-from WAN failure; \opReplay drains the backlog. \scnref{AV-2}: \opPublish,
-persist-before-\opAck, unchanged retries and event-ID deduplication address lost
-messages and responses. \scnref{AV-3}: subscriber \opReplay and atomic processing
-cursors let the \CentralMasterInventory catch up after restart; \opResync reports
-gaps outside retained history.
+\scnref{AV-1}, \scnref{AV-2}: durable \Outbox retry, \opPublish,
+persist-before-\opAck and publisher \opReplay. \scnref{AV-3}: subscriber
+\opReplay from durable processing cursors; \opResync for gaps.
 \item[Performance and scalability.]
-\scnref{PERF-1}, \scnref{PERF-2} and \scnref{SCAL-1}: the capacity rule sizes
-\opPublish and publisher \opReplay for the stated store workload and recovery
-traffic. \scnref{SCAL-2}: \opSubscribe and \opUnsubscribe change the client set
-at runtime, subject to declared capacity. \scnref{PERF-3}: independent subscriber
-queues prevent a slow \ReportingClient from blocking ingestion; report queries,
-aggregation algorithms and their response-time guarantees belong to the reporting
-and inventory components, not the \IEP.
+\scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}: \opPublish/\opReplay capacity
+and backpressure rules. \scnref{SCAL-2}: runtime \opSubscribe/\opUnsubscribe.
 \item[Security.]
-\scnref{SEC-1}: the required-environment rule restricts database access; database
-and operating-system enforcement remain environmental responsibilities.
-\scnref{SEC-2}: every operation and delivery uses an authenticated secure channel.
-\scnref{SEC-3}: source/topic authorization restricts \opPublish, \opSubscribe,
-\opReplay and \opResync; manager permissions on reports and orders must also be
-enforced by the applications serving those requests.
+\scnref{SEC-1}: restricted storage access in the required environment.
+\scnref{SEC-2}: authenticated secure channels. \scnref{SEC-3}: source/topic
+authorization on publishing, subscriptions and recovery.
 \item[Modifiability and integration.]
-\scnref{MOD-1}, \scnref{INT-2}: \opSubscribe and \opUnsubscribe decouple client
-types and counts from publishers. \scnref{MOD-2}: hierarchical topic matching
-admits additional family levels without changing the event schema.
-\scnref{INT-1}: the defined event records, operation contracts and errors allow
-an external system's adapter to use \opPublish or \opSubscribe under provisioned
-credentials; translating its native messages remains the adapter's responsibility.
+\scnref{MOD-1}, \scnref{INT-2}: runtime \opSubscribe/\opUnsubscribe.
+\scnref{MOD-2}: hierarchical topic matching. \scnref{INT-1}: external adapters
+use the defined messages and \opPublish/\opSubscribe contracts.
 \item[Testing and portability.]
-\scnref{TEST-1}: \opPublish, \opAck and \opReplay expose IDs and source positions
-for checking recovery under lost events or responses. \scnref{TEST-2}: timeouts,
-\opResync positions and subscriber replay make restart/catch-up observable;
-failure detection and node failover timing require separate deployment tests.
-\scnref{PORT-1}: platform-independent logical records and operation semantics
-allow a replacement implementation to preserve the contract. Migration must
-preserve durable IDs, sequences, acknowledgements and subscriber cursors, and
-implement the agreed wire binding; this interface does not itself move software
-or data between platforms.
-\item[Usability.]
-\scnref{USE-1} and \scnref{USE-2}: \opSubscribe supplies events to
-\ShippingOrderGen and \ReportingClient, but training effort, order-generation
-workflows and report interpretation belong to their user interfaces. We claim
-no direct usability guarantee from the messaging protocol.
+\scnref{TEST-1}: IDs, \opAck and \opReplay expose loss/retry outcomes.
+\scnref{TEST-2}: timeouts and \opResync expose recovery positions; failover timing
+requires deployment tests. \scnref{PORT-1}: logical records and operation contracts
+remain stable across platforms; migration preserves durable recovery state.
 \end{description}
+Report aggregation performance (\scnref{PERF-3}) and manager usability
+(\scnref{USE-1}, \scnref{USE-2}) belong to the reporting, inventory and user-interface
+components; the \IEP supplies events without guaranteeing those outcomes.
 
 \todo{To be completed in Slice 3 (issue \#4): final PDF/page-budget verification.}
