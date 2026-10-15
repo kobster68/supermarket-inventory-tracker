@@ -1,7 +1,197 @@
 % Section 3.1 (Interfaces): the interface of the key component.
 % Owner: Slice 3 (issue #4). Input from Section 3.1's Interfaces subsection
 % (label sec:cc-interfaces) under a stable heading.
-\paragraph{Interface specification.}
+% The SEI template places Interfaces within the view packet's Element Catalog.
+% It prescribes no further internal interface outline;
+% the subheadings below organize the interface details required by issue #4.
+% Scope text layout to this interface; preserve the document's running page style.
+\begingroup
+\fancypagestyle{iep}{%
+  \fancyhf{}%
+  \fancyhead[L]{\small Software Architecture Document}%
+  \fancyhead[R]{\small Supermarket Inventory Tracking System}%
+  \fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0.4pt}%
+}
+\pagestyle{iep}
+\setlength{\emergencystretch}{2em}
+\setlength{\parskip}{3pt plus 1pt}
+\paragraph{\IEP interface specification.}
 \label{sec:iep}
-The \IEP is the provided-and-required interface of the key component, the \CFE.
-\todo{To be completed in Slice 3 (issue \#4): identity and version; the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; data types; semantics; error handling; usage restrictions; variability; element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
+\subparagraph{Identity, purpose, and provided/required sides.}
+We define version 1.0 of the \IEP to connect store and \DC publishers
+to runtime subscribers through the \CFE.
+The provided side comprises the six operations below. The required side comprises
+durable storage, a subscriber registry, secure channels, a product catalog and clocks;
+publishers retain unacknowledged events and subscribers process them idempotently
+(Bass, Clements, and Kazman 230).
+
+\subparagraph{Data types and topic naming.}
+We use case-sensitive fields and nonempty identifiers compared exactly;
+the wire encoding preserves their types.
+
+\begin{description}[nosep,leftmargin=1em,style=nextline]
+\item[\InventoryEvent]
+\texttt{eventId}: globally unique identifier, unchanged on retry;
+\texttt{source}: \texttt{store/<storeId>} or \texttt{dc/<dcId>};
+\texttt{product}: stable product identifier;
+\texttt{quantityDelta}: nonzero signed 64-bit stock-unit delta (positive adds);
+\texttt{timestamp}: UTC \texttt{YYYY-MM-DDThh:mm:ss.sssZ};
+\texttt{sequence}: persistent positive 64-bit counter, consecutive per source from 1.
+Retries preserve all fields; sequence, not timestamp, determines order.
+
+\item[\Acknowledgement]
+\texttt{eventId}, \texttt{source}, \texttt{sequence}: accepted event;
+\texttt{acceptedThrough}: highest contiguous persisted source sequence, not subscriber progress.
+
+\item[Subscription]
+\texttt{subscriberId}: stable authenticated client ID;
+\texttt{subscriptionId}: identifier assigned by the \CFE;
+\texttt{sourceFilter}: an exact source or \texttt{*}; and
+\texttt{familyFilter}: an exact product-family path, that path followed by
+\texttt{/**} for itself and all descendants, or \texttt{*} for all families.
+Recovery positions are per subscription and source.
+\end{description}
+
+We name topics \texttt{inventory/<source>/family/<familyPath>}. Their segments
+contain letters, digits, hyphens or underscores, separated by slashes. The \CFE resolves catalog families;
+both filters and authorization must match. \texttt{food/**} includes
+\texttt{food/dairy}, not \texttt{foodstuff}.
+
+\subparagraph{Resources and operations.}
+We specify each operation through its syntax, effects and errors
+(Bass, Clements, and Kazman 219).
+All requests require authenticated, authorized version-1.0 sessions; \texttt{?} means optional.
+Common errors: \texttt{INVALID} (fields/version), \texttt{UNAUTHORIZED} (identity/scope),
+\texttt{UNAVAILABLE}, \texttt{BUSY(retryAfterMs)} (positive millisecond delay),
+\texttt{TIMEOUT} (uncertain outcome).
+
+\begin{description}[nosep,leftmargin=1em,style=nextline]
+\item[\opPublish\texttt{(event)}]
+\emph{Pre/meaning:} Submit an authorized source's next event.
+\emph{Post:} Persist event and identity/sequence, then \opAck and fan-out;
+identical retries create no extra entry.
+\emph{Errors:} Common errors; \texttt{OUT\_OF\_ORDER} (returns expected sequence) for gaps,
+\texttt{CONFLICT} for reused IDs/sequences with changed content,
+\texttt{UNKNOWN\_PRODUCT}. Rejection never advances the source position.
+\item[\opAck\texttt{(acknowledgement)}]
+\emph{Pre/meaning:} Broker response confirming durable acceptance.
+\emph{Post:} The \Outbox saves the maximum of its position and
+\texttt{acceptedThrough} before pruning; subscriber cursors are unchanged.
+\emph{Errors:} Reject malformed/mismatched or unauthenticated confirmations as
+\texttt{INVALID} or \texttt{UNAUTHORIZED} without pruning; lost responses cause retries.
+\item[\opSubscribe\texttt{(subscriberId, sourceFilter, familyFilter)}]
+\emph{Pre/meaning:} Provisioned client opens a receive channel with authorized filters.
+\emph{Post:} Persist/return subscription and \texttt{startAfter}, the per-source
+accepted positions (zero if empty). Live events follow these positions; history
+requires \opReplay. Identical active requests return the same record/positions.
+\emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIBER}; rejection creates nothing.
+\item[\opUnsubscribe\texttt{(subscriberId, subscriptionId)}]
+\emph{Pre/meaning:} Owner removes its subscription.
+\emph{Post:} Persist removal; stop scheduling deliveries, allowing in-flight messages.
+Owner retries succeed while removal records exist; logs remain unchanged.
+\emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIPTION} without active/removal record.
+\item[\opReplay\texttt{(role, source, afterSequence, subscriptionId?, events?)}]
+\emph{Pre/meaning:} Nonnegative exclusive cursor. For \texttt{publisher}, send
+ordered retained events after the \Outbox position; for \texttt{subscriber},
+identify an owned active subscription, omit events and use its durable cursor.
+\emph{Post:} Publisher events follow \opPublish individually; partial failure
+identifies the first failed event. \Subscriber replay returns matching events in
+source order through a captured high-water mark, then \texttt{scannedThrough}
+(that mark); live delivery follows without gaps. Advance past filtered-out positions
+only after processing returned events. Retries may duplicate delivery.
+\emph{Errors:} Common errors and those of \opPublish; \texttt{UNKNOWN\_SUBSCRIPTION},
+\texttt{INVALID\_CURSOR} (subscriber ahead), \texttt{HISTORY\_EXPIRED}.
+Publisher-ahead positions require \opResync rather than skipping.
+\item[\opResync\texttt{(role, source, lastKnownSequence, subscriptionId?)}]
+\emph{Pre/meaning:} Authorized publisher/subscriber reconciles a nonnegative
+position; subscribers identify an owned active subscription.
+\emph{Post:} Return \texttt{acceptedThrough}, \texttt{earliestRetained} (first
+replayable sequence; accepted position plus one for an empty log), and recovery action.
+Publishers resend after broker position; subscribers replay after their cursor.
+No stock/sequence resets.
+\emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIPTION},
+\texttt{INVALID\_CURSOR} (subscriber ahead), \texttt{RECOVERY\_REQUIRED} with
+bounds for missing history. Restore a consistent snapshot/backup and positions
+before replay; reconciliation cannot reconstruct missing events.
+\end{description}
+
+\subparagraph{Shared semantics and restrictions.}
+We restore writable logs, identity records, source positions and the registry before
+serving requests. Each source has one logical publisher: its \StoreAgent
+through the \Outbox, or the \DCAgent; failover prevents concurrent sequence allocation.
+Every request and delivery is authorized. Local inventory, sequence and \Outbox
+append commit atomically. We preserve order per source, not globally; subscribers
+atomically save changes, deduplication and processing cursors. Identity records
+survive restarts throughout retry/replay history; unverifiable old events require recovery.
+
+We keep the \Outbox as owner of the publisher's acknowledged position, saved before
+pruning. Clients subscribe before receiving and recover using separate subscriber
+cursors. Transient errors are retried unchanged with capped exponential backoff/jitter,
+respecting \texttt{retryAfterMs}; unacknowledged events are never discarded.
+Invalid requests require correction; gaps use \opReplay or \opResync
+(Bass, Clements, and Kazman 228). We bound batches and queues, returning
+\texttt{BUSY} before admission, and isolate slow subscribers for log-based catch-up.
+Offline updates continue until \Outbox exhaustion, which rejects updates atomically.
+Expired history never silently advances cursors.
+
+\subparagraph{Variability, limits, and quality properties.}
+We design for the required 100 events/s/store for ten stores (1{,}000/s), with additional
+capacity for \DC traffic, retries and fan-out. Clients use \opSubscribe and
+\opUnsubscribe at runtime without restarts or publisher changes. Each deployment
+declares tested client/queue limits and returns \texttt{BUSY} at capacity.
+We propose, without claiming validation, 2{,}000 store events/s during catch-up,
+1--100-event replay batches and at least 60 minutes of replay/identity history,
+extended for outage/catch-up headroom. Our proposed 95th-percentile targets are
+1 second to \opAck and 2 seconds to first delivery, measured from transmission
+at live load with healthy infrastructure, no backlog and within client limits;
+application processing is excluded. We provide eventual, at-least-once delivery
+assuming connectivity returns, retries continue and capacity/storage remain available.
+Beyond retention, recovery needs consistent snapshots/backups; permanent loss of
+all copies is unrecoverable. We leave system sizing to Section~\ref{sec:analysis-results}.
+
+\subparagraph{Element requirements.}
+The \CFE requires storage that atomically commits events, identities and positions before
+\opAck and supports consistent backup/restore. The durable registry retains owners,
+filters and start/removal records; subscribers retain atomic checkpoints. The environment
+supplies catalog routing, encrypted integrity-protected channels with mutual authentication
+(including local clients), credentials, revocation and source/topic permissions.
+We restrict database access; read access and wildcards grant no extra publishing scope.
+UTC timestamps and monotonic timeout clocks keep recovery independent of clock adjustments.
+
+\subparagraph{Rationale and examples.}
+We choose asynchronous queues for unreliable distributed links
+(Bass, Clements, and Kazman 224). Buffering keeps updates independent of the WAN;
+acknowledging persistence keeps slow subscribers from delaying publishers. We use IDs
+for safe retries and topics to decouple clients. We accept eventual consistency and
+durable duplicate tracking, and must validate deployment limits and agree on wire binding.
+
+\emph{Normal:} After a sale, the \StoreAgent atomically updates stock and
+appends \texttt{e41} (\texttt{store/17}, \texttt{milk-1}, delta $-1$,
+\texttt{2026-10-15T18:00:00.000Z}, sequence 41). The \Outbox sends
+\opPublish; the \CFE persists, sends \opAck for \texttt{e41} through 41,
+then fans out to matching subscriptions. The \Outbox saves 41 before pruning;
+subscribers apply once despite duplicates.
+
+\emph{Outage:} We follow the same source through WAN failure. The \Outbox buffers \texttt{e42,e43} while local updates continue.
+On authenticated reconnect, it sends \opReplay: publisher role, source
+\texttt{store/17}, saved cursor 41, events \texttt{[e42,e43]}, no subscription ID.
+The \CFE persists, acknowledges and fans out each event; the \Outbox saves progress
+before pruning. \Subscriber recovery uses its own cursor/subscription ID without an
+event batch; \opResync reconciles missing history. Identical retries are deduplicated.
+
+\subparagraph{Interface scenario coverage.}
+\scnref{AV-1}, \scnref{AV-2}: buffering, \opPublish, \opAck, publisher \opReplay;
+\scnref{AV-3}: subscriber \opReplay, \opResync, atomic cursors.
+\scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}: capacity/backpressure;
+\scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-2}: runtime
+\opSubscribe and \opUnsubscribe; \scnref{MOD-2}: hierarchical topics.
+\scnref{INT-1}: adapter message/operation contracts.
+\scnref{SEC-1}: restricted storage; \scnref{SEC-2}: secure channels;
+\scnref{SEC-3}: source/topic authorization. \scnref{TEST-1}: IDs/acknowledgements and \opReplay;
+\scnref{TEST-2}: timeouts and \opResync, plus deployment failover tests;
+\scnref{PORT-1}: portable contracts/state and agreed wire binding.
+\scnref{PERF-3}, \scnref{USE-1}, \scnref{USE-2} concern reporting/UI outcomes,
+not protocol guarantees. We record system coverage in Section~\ref{sec:requirements-coverage}.
+\par
+\endgroup
