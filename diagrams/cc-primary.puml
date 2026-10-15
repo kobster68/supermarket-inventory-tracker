@@ -1,0 +1,85 @@
+@startuml
+' Primary presentation of the Components-and-Connectors key view.
+' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+!include style.puml
+title Components-and-Connectors view: primary presentation
+
+skinparam componentStyle rectangle
+left to right direction
+skinparam nodesep 12
+skinparam ranksep 34
+skinparam rectangleBorderColor #475569
+
+' ---- store side (one store, drawn in full, x N) -------------------------------
+actor "Store\nmanager" as SMGR
+node "External\nPOS system" as POS #dae8fc
+
+rectangle "Store  (one of N: 3 now, up to 10)" as STORE {
+  component "POS Adapter" as POSAD #dae8fc
+  component "Store Agent" as SA #d5e8d4
+  database "Store-Local\nInventory" as SLI #e1d5e7
+  queue "Outbox" as OB #e1d5e7
+}
+
+' ---- distribution center ------------------------------------------------------
+rectangle "Distribution Center" as DCB {
+  component "Communications\nFront-End\n(pub-sub broker)" as CFE #fff2cc
+  database "CFE event\nstore" as CFEDB #e1d5e7
+  component "DC Agent" as DCA #fff2cc
+  component "Central Master\nInventory" as CMI #fff2cc
+  database "Master\ninventory DB" as CMIDB #e1d5e7
+  component "Shipping-Order\nGeneration" as SOG #fff2cc
+  component "Supplier Gateway" as SG #dae8fc
+  component "Store-Tracking\nClient" as STC #fff2cc
+  component "Reporting Client" as RC #fff2cc
+}
+actor "DC\nmanager" as DMGR
+node "External\nsupplier/ERP system" as ERP #dae8fc
+
+' keep the DC manager to the right of the DC box so its query arrows enter from the
+' right, clear of the "Distribution Center" boundary title at the top of the box
+CMIDB -[hidden]right- DMGR
+
+' ---- connectors ---------------------------------------------------------------
+POS --> POSAD : <<request/reply>>\nsales records
+POSAD --> SA : <<local call>>\nInventory Events
+SMGR --> SA : <<request/reply>>\nlocal inventory queries
+SA --> SLI : <<data access>>\napply, read
+SA --> OB : <<data access>>\nappend (ordered)
+OB --> CFE : <<pub-sub>> publish\nIEP over TLS [secure]
+CFE --> OB : <<pub-sub>> acknowledge\nIEP over TLS [secure]
+DCA --> CFE : <<pub-sub>> publish
+CFE --> CFEDB : <<data access>>\npersist
+CFE --> CMI : <<pub-sub>> notify
+CFE --> SOG : <<pub-sub>> notify
+CFE --> STC : <<pub-sub>> notify
+CFE --> RC : <<pub-sub>> notify
+CMI --> CMIDB : <<data access>>
+SOG --> CMI : <<request/reply>> read
+RC --> CMI : <<request/reply>> query
+STC --> CMI : <<request/reply>> query
+SOG --> SG : <<local call>>\nshipping, purchase orders
+SG --> ERP : <<request/reply>>\norders, receipts
+DMGR --> RC : <<request/reply>> reports
+DMGR --> STC : <<request/reply>> store status
+
+note bottom of CFE
+  One n-ary publish-subscribe connector (the Inventory
+  Exchange Protocol): the CFE broker joins every publisher
+  (store Outboxes, DC Agent) to every subscriber. Drawn once.
+end note
+
+legend right
+|= Notation |= Meaning |
+| green fill | store-side runtime component |
+| yellow fill | distribution-center runtime component |
+| blue fill | external system or boundary element |
+| purple database / queue | durable, ordered persistent store |
+| stick figure | human role (store or DC manager), not a component |
+| <<pub-sub>> | n-ary publish-subscribe connector (IEP) |
+| <<request/reply>> | synchronous request/reply connector |
+| <<data access>> | a component reading or writing its own store |
+| <<local call>> | in-process hand-off between a component and its boundary element |
+| [secure] | a store-to-DC network leg carried over a secure channel |
+endlegend
+@enduml

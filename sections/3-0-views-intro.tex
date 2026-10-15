@@ -4,7 +4,7 @@
 This section presents the architecture as views. Following the fourth edition of
 \emph{Software Architecture in Practice} and the SEI Views and Beyond template,
 architectural views fall into three categories according to the kind of element they
-show (Bass, Clements, and Kazman 333):
+show (Bass, Clements, and Kazman 333; ``Software Architecture Document Template,'' \S\,Views):
 \begin{itemize}[nosep]
   \item \textbf{Module views}, whose elements are implementation units --- the
   system's code structure;
@@ -13,19 +13,20 @@ show (Bass, Clements, and Kazman 333):
   \item \textbf{Allocation views}, which map software elements onto the environment
   in which they are built and run.
 \end{itemize}
-The assignment requires all three. This first draft delivers one of them in full ---
-the C\&C view of the runtime system --- and defers the Module and Allocation views to
-the second draft. The table below classifies each required view; the C\&C row is the
-view delivered here, and the Module and Allocation rows are listed so that the
-required structure is visible even in a draft.
+The assignment requires all three. This first draft delivers one of them in full,
+the C\&C view of the runtime system, and defers the Module and Allocation views to the
+second draft. The table below classifies each required view and records its status, so
+that the required structure is visible even in a draft.
 
 \begin{center}
-\begin{tabularx}{\linewidth}{|X|l|c|c|c|}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.17\linewidth}|c|c|c|>{\raggedright\arraybackslash}p{0.15\linewidth}|}
 \hline
-\textbf{Name of view} & \textbf{Viewtype} & \textbf{Module?} & \textbf{C\&C?} & \textbf{Allocation?}\\\hline
-Runtime C\&C view (key view) & Components-and-Connectors & No & Yes & No\\\hline
-Module view (second draft) & Module & Yes & No & No\\\hline
-Allocation view (second draft) & Allocation & No & No & Yes\\\hline
+\textbf{Name of view} & \textbf{Viewtype} & \textbf{Module?} & \textbf{C\&C?} & \textbf{Allocation?} & \textbf{Status}\\\hline
+Runtime C\&C view (key view) & Components-and-Connectors & No & Yes & No & Delivered in this draft (Section~\ref{sec:cc-view})\\\hline
+Module view & Module & Yes & No & No & Draft 2\\\hline
+Allocation view & Allocation & No & No & Yes & Draft 2\\\hline
 \end{tabularx}
 \end{center}
 

@@ -1,0 +1,38 @@
+@startuml
+' Behavior 1: normal publish -> acknowledge -> fan-out.
+' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+!include style.puml
+title Components-and-Connectors view: behavior, publish, acknowledge, fan-out
+
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 220
+
+participant "POS system" as POS #dae8fc
+participant "POS Adapter" as POSAD #dae8fc
+participant "Store Agent" as SA #d5e8d4
+database "Store-Local\nInventory" as SLI #e1d5e7
+queue "Outbox" as OB #e1d5e7
+participant "Communications\nFront-End" as CFE #fff2cc
+database "CFE event store" as CFEDB #e1d5e7
+participant "Subscribers\n(CMI, Shipping-Order Gen,\nStore-Tracking, Reporting)" as SUB #fff2cc
+
+POS -> POSAD : sales record
+POSAD -> SA : Inventory Event
+group one local step
+  SA -> SLI : apply (update stock)
+  SA -> OB : append (durable, ordered)
+end
+OB -> CFE : publish (Inventory Event)\nIEP over TLS [secure]
+CFE -> CFEDB : persist
+CFE --> OB : acknowledge (sequence no.)\nIEP over TLS [secure]
+note over OB : holds the last acknowledged\nsequence; acknowledged events\nmay be pruned
+CFE -> SUB : notify by topic (source, product family)
+note over SUB : idempotent by event ID;\nduplicates are ignored
+
+legend right
+  Normal path. The store never blocks on the WAN:
+  the local step completes first, then the Outbox
+  publishes. At-least-once delivery, acknowledged
+  per source sequence number.
+endlegend
+@enduml
