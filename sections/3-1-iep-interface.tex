@@ -185,4 +185,64 @@ has actually been recovered.
 cannot recover the gap.
 \end{description}
 
-\todo{To be completed in Slice 3 (issue \#4): shared semantics and error-handling policy; usage restrictions; variability; detailed element requirements; quality properties; rationale; scenario coverage; and two example exchanges.}
+\textbf{Shared delivery rules and usage restrictions.}
+\begin{description}[nosep,leftmargin=1em,style=nextline]
+\item[Initialization and permissions.]
+Before accepting traffic, the \CFE restores its log, deduplication records,
+source positions and subscriber registry, and verifies that persistence is writable.
+Clients authenticate over the secure channel and agree on version 1.0 before
+using an operation; unsupported versions are rejected as \texttt{INVALID}.
+Each source has one authorized logical publisher: its \StoreAgent, acting through
+its \Outbox, or the \DCAgent for \DC events. Concurrent publisher instances must
+coordinate sequence allocation and prevent an old instance from continuing after
+failover. A store cannot publish for another store or for the \DC.
+Read permission does not grant publish permission; authorization is checked on
+every request and delivery, including replay (\scnref{SEC-2}, \scnref{SEC-3}).
+
+\item[Ordering and duplicates.]
+Local inventory updates, sequence allocation and \Outbox insertion commit
+atomically before transmission. The \CFE accepts new events consecutively per
+source and serializes delivery per subscription and source; there is no total
+order across sources. A sequence gap requires replay of the missing events,
+not renumbering or skipping them. Retransmitted older events can recur; subscribers
+must ignore already applied event IDs. Deduplication state must survive restarts
+and cover the supported retry/replay window. If an older event cannot be verified
+against retained identity records, the \CFE rejects it as
+\texttt{RECOVERY\_REQUIRED} instead of applying it as new. Reusing an ID or
+source/sequence for different content is \texttt{CONFLICT} (\scnref{AV-2}).
+
+\item[Acknowledgements and retries.]
+Only durable \CFE persistence permits \opAck; receipt in memory or subscriber
+delivery does not. The \Outbox alone owns and durably updates the publisher's
+last acknowledged sequence before pruning; connection state cannot replace it.
+After \texttt{TIMEOUT}, \texttt{UNAVAILABLE} or \texttt{BUSY}, clients retry with
+the same event or subscription identifiers, using exponential backoff with jitter
+and a configured maximum delay; \texttt{BUSY} waits at least
+\texttt{retryAfterMs}. Publishers retain events until acknowledged rather than
+discarding them after a retry limit. Invalid data, permission failures and conflicts
+require correction; sequence and history errors use \opReplay or \opResync.
+
+\item[Receiving and recovery.]
+A client must complete \opSubscribe before receiving events. On reconnect it
+reuses its active subscription and requests \opReplay for each source from its
+own durable processing cursor; the publisher's acknowledgement position is not a
+subscriber cursor. A new subscription starts at \texttt{startAfter}; earlier
+history requires explicit replay. A subscriber persists each applied change and
+cursor together, so a crash before commit leads to safe reprocessing
+(\scnref{AV-3}). Transport receipt alone never proves application processing.
+
+\item[Backpressure.]
+The \CFE bounds incoming batches and per-client delivery queues. When admission
+capacity is exhausted, it returns \texttt{BUSY} before accepting a new event;
+previously persisted events remain accepted even if their response is lost.
+A slow subscriber is paused or disconnected independently, with catch-up served
+from the durable log; it cannot block other subscribers or publisher acknowledgements.
+Publishers buffer and retry while the WAN or \CFE is unavailable. Local updates
+remain independent of the WAN while durable \Outbox capacity remains available;
+on exhaustion the store reports a capacity fault and rejects further updates
+atomically rather than losing events or promising unlimited offline operation.
+Retention limits are explicit: expired history requires recovery, never silent
+advancement of a subscriber cursor (\scnref{AV-1}, \scnref{TEST-1}).
+\end{description}
+
+\todo{To be completed in Slice 3 (issue \#4): variability; detailed element requirements; quality properties; rationale; scenario coverage; and two example exchanges.}
