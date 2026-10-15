@@ -94,11 +94,11 @@ Owner retries succeed while removal records exist; logs remain unchanged.
 ordered retained events after the \Outbox position; for \texttt{subscriber},
 identify an owned active subscription, omit events and use its durable cursor.
 \emph{Post:} Publisher events follow \opPublish individually; partial failure
-identifies the first failed event. Subscriber replay returns matching events in
+identifies the first failed event. \Subscriber replay returns matching events in
 source order through a captured high-water mark, then \texttt{scannedThrough}
 (that mark); live delivery follows without gaps. Advance past filtered-out positions
 only after processing returned events. Retries may duplicate delivery.
-\emph{Errors:} Common/publish errors; \texttt{UNKNOWN\_SUBSCRIPTION},
+\emph{Errors:} Common errors and those of \opPublish; \texttt{UNKNOWN\_SUBSCRIPTION},
 \texttt{INVALID\_CURSOR} (subscriber ahead), \texttt{HISTORY\_EXPIRED}.
 Publisher-ahead positions require \opResync rather than skipping.
 \item[\opResync\texttt{(role, source, lastKnownSequence, subscriptionId?)}]
@@ -126,7 +126,7 @@ The \Outbox alone owns and saves publisher acknowledgement positions before prun
 Subscribe before receiving; reconnect/replay from separate subscriber cursors.
 Retry transient errors unchanged with capped exponential backoff/jitter, respecting
 \texttt{retryAfterMs}; never discard unacknowledged events. Correct invalid requests;
-replay/resync gaps (Bass, Clements, and Kazman 228).
+use \opReplay or \opResync for gaps (Bass, Clements, and Kazman 228).
 Bound batches/queues; return \texttt{BUSY} before admission. Isolate slow subscribers
 for log-based catch-up. Offline updates continue until \Outbox exhaustion, which
 rejects updates atomically. Expired history never silently advances cursors.
@@ -170,7 +170,7 @@ subscribers apply once despite duplicates.
 On authenticated reconnect, it sends \opReplay: publisher role, source
 \texttt{store/17}, saved cursor 41, events \texttt{[e42,e43]}, no subscription ID.
 The \CFE persists, acknowledges and fans out each event; the \Outbox saves progress
-before pruning. Subscriber recovery uses its own cursor/subscription ID without an
+before pruning. \Subscriber recovery uses its own cursor/subscription ID without an
 event batch; \opResync reconciles missing history. Identical retries are deduplicated.
 
 \subparagraph{Interface scenario coverage.}
