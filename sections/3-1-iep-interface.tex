@@ -28,4 +28,59 @@ for retry. Subscribers must receive matching events and process retries
 idempotently by event ID. We specify the operations, messages and environmental
 requirements in the remainder of this interface definition.
 
-\todo{To be completed in Slice 3 (issue \#4): the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; data types; semantics; error handling; usage restrictions; variability; detailed element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
+\textbf{Message types and topics.}
+We use the following logical records in version 1.0. Field names are case-sensitive;
+identifiers are nonempty, opaque strings compared exactly. Transport encoding is
+left to the implementation, which must preserve these field types and values.
+
+\begin{description}[nosep,leftmargin=1em,style=nextline]
+\item[\InventoryEvent]
+\texttt{eventId}: globally unique identifier, unchanged on retry;
+\texttt{source}: \texttt{store/<storeId>} or \texttt{dc/<dcId>};
+\texttt{product}: stable product identifier;
+\texttt{quantityDelta}: signed 64-bit integer in the product's catalogued stock
+unit (positive adds stock, negative removes it; zero is invalid);
+\texttt{timestamp}: UTC occurrence time in
+\texttt{YYYY-MM-DDThh:mm:ss.sssZ} form; and
+\texttt{sequence}: positive 64-bit integer, starting at 1 and increasing by one
+for each new event from that source. Sequence allocation survives publisher
+restarts and is not reset on reconnect; timestamps do not determine event order.
+An event ID always identifies the same complete record, including source and
+sequence. Retrying an event preserves all fields.
+
+\item[\Acknowledgement]
+\texttt{eventId}, \texttt{source} and \texttt{sequence} identify the accepted event;
+\texttt{acceptedThrough} is the highest contiguous per-source sequence durably
+stored by the \CFE. This is a successful persistence confirmation, not a
+confirmation that subscribers have processed the event; failures are errors,
+not successful acknowledgements. The \Outbox durably advances its last
+acknowledged sequence to \texttt{acceptedThrough} and may prune entries at or
+below it. A retry of an already stored event receives a confirmation identifying
+the same event and the current \texttt{acceptedThrough} value.
+
+\item[Subscription]
+\texttt{subscriberId}: stable client identifier bound to its authenticated identity;
+\texttt{subscriptionId}: identifier assigned by the \CFE;
+\texttt{sourceFilter}: an exact source or \texttt{*}; and
+\texttt{familyFilter}: an exact product-family path, that path followed by
+\texttt{/**} for itself and all descendants, or \texttt{*} for all families.
+The \CFE stores these selections in its registry. Recovery positions are
+maintained separately per subscription and source; a single sequence number
+cannot describe progress across multiple sources.
+\end{description}
+
+Topics have the logical form
+\texttt{inventory/<source>/family/<familyPath>}, for example
+\texttt{inventory/store/17/family/food/dairy}. Store, \DC and family-path segments
+use letters, digits, hyphens or underscores; slashes separate hierarchy levels.
+Product and family identifiers come from the shared product catalog. The \CFE
+resolves an event's product to its family path for routing; publishers cannot
+choose a different family to bypass access restrictions. A subscription matches
+only when both filters match and the subscriber is authorized for that topic.
+For example, source \texttt{store/17} and family \texttt{food/**} include dairy
+events from store 17 but exclude other stores. Matching uses path segments, so
+\texttt{food/**} does not match \texttt{foodstuff}. Additional nesting requires
+no message-schema change (\scnref{MOD-2}); topic subscriptions support new clients
+without changing publishers (\scnref{MOD-1}, \scnref{INT-2}).
+
+\todo{To be completed in Slice 3 (issue \#4): the operations \opPublish, \opAck, \opSubscribe, \opUnsubscribe, \opReplay and \opResync; semantics; error handling; usage restrictions; variability; detailed element requirements; quality properties; and rationale. Every scenario identifier that touches the \CFE is answered by an operation.}
