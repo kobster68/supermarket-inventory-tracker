@@ -118,7 +118,7 @@ before replay; reconciliation cannot reconstruct missing events.
 
 \subparagraph{Shared semantics and restrictions.}
 We restore writable logs, identity records, source positions and the registry before
-serving requests. We allow one logical publisher per source: its \StoreAgent
+serving requests. Each source has one logical publisher: its \StoreAgent
 through the \Outbox, or the \DCAgent; failover prevents concurrent sequence allocation.
 Every request and delivery is authorized. Local inventory, sequence and \Outbox
 append commit atomically. We preserve order per source, not globally; subscribers
@@ -151,7 +151,7 @@ Beyond retention, recovery needs consistent snapshots/backups; permanent loss of
 all copies is unrecoverable. We leave system sizing to Section~\ref{sec:analysis-results}.
 
 \subparagraph{Element requirements.}
-We require storage that atomically commits events, identities and positions before
+The \CFE requires storage that atomically commits events, identities and positions before
 \opAck and supports consistent backup/restore. The durable registry retains owners,
 filters and start/removal records; subscribers retain atomic checkpoints. The environment
 supplies catalog routing, encrypted integrity-protected channels with mutual authentication
@@ -166,7 +166,7 @@ acknowledging persistence keeps slow subscribers from delaying publishers. We us
 for safe retries and topics to decouple clients. We accept eventual consistency and
 durable duplicate tracking, and must validate deployment limits and agree on wire binding.
 
-\emph{Normal:} We follow a sale through the normal path. After the sale, the \StoreAgent atomically updates stock and
+\emph{Normal:} After a sale, the \StoreAgent atomically updates stock and
 appends \texttt{e41} (\texttt{store/17}, \texttt{milk-1}, delta $-1$,
 \texttt{2026-10-15T18:00:00.000Z}, sequence 41). The \Outbox sends
 \opPublish; the \CFE persists, sends \opAck for \texttt{e41} through 41,
@@ -181,7 +181,6 @@ before pruning. \Subscriber recovery uses its own cursor/subscription ID without
 event batch; \opResync reconciles missing history. Identical retries are deduplicated.
 
 \subparagraph{Interface scenario coverage.}
-We map the interface rules to the frozen scenarios below.
 \scnref{AV-1}, \scnref{AV-2}: buffering, \opPublish, \opAck, publisher \opReplay;
 \scnref{AV-3}: subscriber \opReplay, \opResync, atomic cursors.
 \scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}: capacity/backpressure;
