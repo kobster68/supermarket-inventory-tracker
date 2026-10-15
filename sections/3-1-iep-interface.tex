@@ -18,6 +18,7 @@ through the \CFE.
 The provided side comprises the six operations below. The required side comprises
 durable storage, a subscriber registry, secure channels, a product catalog and clocks;
 publishers retain unacknowledged events and subscribers process them idempotently.
+We distinguish provided services from environmental needs (Bass, Clements, and Kazman 230).
 
 \subparagraph{Data types and topic naming.}
 Fields are case-sensitive; identifiers are nonempty strings compared exactly.
@@ -57,6 +58,7 @@ families from the catalog. Both filters and topic authorization must match;
 \texttt{food/**} includes \texttt{food/dairy}, not \texttt{foodstuff}.
 
 \subparagraph{Resources and operations.}
+We specify operation syntax, effects and errors (Bass, Clements, and Kazman 219).
 Logical signatures below require an authenticated, authorized version-1.0 session;
 \texttt{?} marks optional arguments.
 Common errors are \texttt{INVALID} (malformed fields), \texttt{UNAUTHORIZED}
@@ -131,6 +133,8 @@ replay from each subscriber cursor, not the publisher position. Retry transient
 errors unchanged with capped exponential backoff and jitter, waiting at least
 \texttt{retryAfterMs} for \texttt{BUSY}. Never discard unacknowledged events after
 a retry limit. Correct invalid/unauthorized/conflicting requests; replay/resync gaps.
+Retrying transient failures and correcting invalid requests follow the book's
+error-handling guidance (Bass, Clements, and Kazman 228).
 
 Bound batches and per-client queues; return \texttt{BUSY} before accepting new
 work. Pause/disconnect slow subscribers independently for log-based catch-up.
@@ -164,7 +168,8 @@ database access; wildcards grant no extra permission. UTC clocks timestamp event
 monotonic clocks measure timeouts. Sequence-based recovery tolerates clock adjustment.
 
 \subparagraph{Rationale and design issues.}
-Buffering avoids WAN-dependent updates; persistence-boundary acknowledgement
+We use asynchronous queued events for unreliable distributed communication
+(Bass, Clements, and Kazman 224). Buffering avoids WAN-dependent updates; persistence-boundary acknowledgement
 isolates slow subscribers. IDs make retries safe, source ordering avoids global
 coordination, and topics decouple clients. Costs: eventual consistency and durable
 duplicate tracking. Deployment must validate limits and agree on wire encoding.
