@@ -17,9 +17,13 @@ concerns the elements of the system, their externally visible properties, and th
 relationships among them; we leave a decision to downstream design when it concerns
 only the private internals of a single element (Bass, Clements, and Kazman 2).
 
-This first draft is a thin vertical slice. It carries one key view in full --- a
-Components-and-Connectors view of the runtime system --- and a full interface
-specification for the key component, the \CFE. The remaining required views, a
-Module view and an Allocation view, and the sections that depend on them, are named
-and scoped here but deferred to the second draft. Every section that is not yet
-written says so explicitly rather than being omitted.
+This first draft is a thin vertical slice. It carries two views. The module
+decomposition view is the primary view: the functional decomposition of the system,
+close to a domain model, from which the later module views grow. The
+Components-and-Connectors view is the key runtime view, driven by the scenario the
+team rates highest in value and risk --- the guaranteed delivery of store events to
+the distribution center. The draft also carries a full interface specification for
+the key component, the \CFE. The remaining required view, an Allocation view, and the
+sections that depend on it, are named and scoped here but deferred to the second
+draft. Every section that is not yet written says so explicitly rather than being
+omitted.
