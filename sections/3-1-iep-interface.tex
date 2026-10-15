@@ -245,4 +245,74 @@ Retention limits are explicit: expired history requires recovery, never silent
 advancement of a subscriber cursor (\scnref{AV-1}, \scnref{TEST-1}).
 \end{description}
 
-\todo{To be completed in Slice 3 (issue \#4): variability; detailed element requirements; quality properties; rationale; scenario coverage; and two example exchanges.}
+\textbf{Variability, capacity, and quality properties.}
+The assignment workload is 100 events/s per store for up to ten stores:
+1{,}000 new store events/s at the \CFE (\scnref{PERF-1}, \scnref{PERF-2},
+\scnref{SCAL-1}). This excludes the \DCAgent's traffic, retransmissions and
+subscriber fan-out, which need additional capacity. A 30-minute WAN outage at
+that rate requires at least 180{,}000 retained events per store, or 1.8 million
+across ten stores. Actual storage must also cover record size, indexes,
+deduplication metadata and safety margin; these counts are not byte estimates.
+The 99\% local-availability and complete store-to-\DC delivery requirements
+motivate local persistence and retry; protocol rules alone do not establish the
+availability of the store hardware or database (\scnref{AV-1}, \scnref{AV-2}).
+
+We propose the following initial deployment targets, not additional assignment
+requirements or measured results: capacity for 2{,}000 accepted store events/s
+during catch-up, including the 1{,}000/s live load; at least 60 minutes of
+subscriber replay history (3.6 million events at the live store rate); and
+publisher replay batches of 1--100 events. At 1{,}000/s of spare acceptance
+capacity, a simultaneous 1.8-million-event backlog takes about 30 minutes to
+drain, provided network, storage and subscriber capacity suffice. Retention must
+cover both outage and catch-up time; 60 minutes is an initial minimum with no
+safety margin in this worst case, so provisioning must increase it for operational
+headroom and additional \DC traffic. Retain event identity records for at least
+the supported retry/replay period; expired identity history requires explicit
+recovery rather than an unverified duplicate acknowledgement.
+
+\opSubscribe and \opUnsubscribe change the active client set at runtime without
+changing publishers or restarting the \CFE (\scnref{SCAL-2}, \scnref{MOD-1},
+\scnref{INT-2}). There is no fixed protocol limit on client count; each deployment
+publishes and enforces its tested concurrent-subscription and queue limits.
+Reaching a limit returns \texttt{BUSY}. Adding subscribers increases delivery
+work: if all $N$ subscribers select every event, the live store load alone
+requires up to $1{,}000N$ event deliveries/s. Capacity and retention are
+deployment settings, not a promise of unlimited scaling.
+
+For the initial deployment we propose 95th-percentile publish-to-\opAck latency
+of at most 1 second and publish-to-first-delivery latency of at most 2 seconds,
+measured from publisher transmission under the live workload, healthy WAN and
+storage, within the tested subscription limit and without backlog. These targets
+exclude subscriber application processing and do not apply during outages or
+catch-up. Load and fault tests must validate them before they are claimed as
+achieved (\scnref{TEST-1}, \scnref{TEST-2}).
+
+Delivery to the \DC is eventual, at least once, assuming eventual connectivity,
+continued retry, adequate durable capacity and recovery of the \CFE's accepted
+log after failure. No accepted event may be discarded merely because a subscriber
+is unavailable; subscriber replay is bounded by the declared history window,
+after which a consistent snapshot/backup is required. Permanent loss of all
+durable copies is outside this guarantee. Idempotent application prevents
+duplicate stock changes; the protocol does not promise exactly-once transport.
+
+\textbf{Required environment and security.}
+The \CFE needs a transactional, crash-recoverable event store that atomically
+commits events, identity records and per-source positions before \opAck, with
+backup/restore procedures preserving those positions. Its durable subscriber
+registry retains ownership, filters, subscription start positions and removal
+records. Subscribers additionally require their own atomic inventory/checkpoint
+storage; the registry cannot infer successful processing from socket delivery.
+The routing environment supplies the shared product catalog and family hierarchy.
+
+All \IEP connections require encrypted, integrity-protected channels with server
+and client authentication; this includes \DC-local clients, not only WAN links.
+The environment provisions credentials and source/topic permissions, supports
+revocation, and restricts direct database access to authorized service identities
+(\scnref{SEC-1}, \scnref{SEC-2}, \scnref{SEC-3}). Wildcards never expand a client's
+authorization. The deployment records denied requests and recovery failures
+without exposing credentials. A synchronized UTC wall clock supplies timestamps
+for diagnostics, while a monotonic clock measures retry and timeout intervals;
+clock adjustment must not alter ordering or event identity. Replay depends on
+sequence numbers rather than synchronized clocks.
+
+\todo{To be completed in Slice 3 (issue \#4): rationale; scenario coverage; and two example exchanges.}
