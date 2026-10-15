@@ -4,12 +4,17 @@
 % The SEI template places Interfaces within the view packet's Element Catalog.
 % It prescribes no further internal interface outline;
 % the subheadings below organize the interface details required by issue #4.
-% Keep running headers on continuation pages, including pages using plain style.
+% Scope text layout to this interface; preserve the document's running page style.
 \begingroup
-\pagestyle{fancy}
-\makeatletter
-\let\ps@plain\ps@fancy
-\makeatother
+\fancypagestyle{iep}{%
+  \fancyhf{}%
+  \fancyhead[L]{\small Software Architecture Document}%
+  \fancyhead[R]{\small Supermarket Inventory Tracking System}%
+  \fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0.4pt}%
+}
+\pagestyle{iep}
+\setlength{\emergencystretch}{2em}
 \paragraph{\IEP interface specification.}
 \label{sec:iep}
 \subparagraph{Identity, purpose, and provided/required sides.}
@@ -72,7 +77,7 @@ Timeouts leave outcomes uncertain; retry unchanged.
 \emph{Pre/meaning:} Submit an authorized source's next event.
 \emph{Post:} Persist event and identity/sequence, then \opAck and fan-out;
 identical retries create no extra entry.
-\emph{Errors:} Common errors; \texttt{OUT\_OF\_ORDER(expectedSequence)} for gaps,
+\emph{Errors:} Common errors; \texttt{OUT\_OF\_ORDER} (returns expected sequence) for gaps,
 \texttt{CONFLICT} for reused IDs/sequences with changed content,
 \texttt{UNKNOWN\_PRODUCT}. Rejection never advances the source position.
 \item[\opAck\texttt{(acknowledgement)}]
