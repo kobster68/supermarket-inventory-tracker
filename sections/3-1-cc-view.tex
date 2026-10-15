@@ -110,7 +110,7 @@ component box in the figure has a row and every row is a box.
 \Outbox & Durable, ordered queue holding events until the \CFE acknowledges them; keeps the last acknowledged sequence number and replays unacknowledged events on reconnect. & Store & Yes (queue) & Delivery (\scnref{AV-2}); buffers a 30-min outage\\\hline
 \CFE & Pub-sub broker: persists each event, acknowledges it to the publishing \Outbox, publishes by topic to every subscriber. & \DC & Yes (event store) & 100\% delivery (\scnref{AV-2}); \mbox{1{,}000} events/s (\scnref{PERF-2})\\\hline
 \DCAgent & Publishes the \DC's own events through the \CFE. & \DC & None & Master covers \DC stock\\\hline
-\CentralMasterInventory & Authoritative record of all store and \DC stock, built from every event. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
+\CentralMasterInventory & Authoritative record of all store and \DC stock, built from every event. After a crash it catches up by running \opSubscribe to the \CFE and \opReplay from the CFE event store at its last applied sequence. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
 \ShippingOrderGen & Computes shipping orders and sends them via the \SupplierGateway. & \DC & None & Report usability (\scnref{USE-1})\\\hline
 \SupplierGateway & Exchanges orders and receipts with the external supplier/ERP system. & \DC (boundary) & None & Integration (\scnref{INT-1})\\\hline
 \StoreTrackingClient & Subscriber; shows a store's inventory and answers the \DC manager's store-status queries. & \DC & None & Variable client (\scnref{SCAL-2}, \scnref{INT-2})\\\hline
@@ -178,6 +178,12 @@ acknowledged sequence number and, if a larger gap is found, \opResync; the \CFE
 acknowledges each event and the subscribers ignore duplicates by event ID, so no event
 is lost (\scnref{AV-2}, \scnref{TEST-1}). The \Outbox is sized for a full 30-minute
 outage at the per-store rate; the sizing is worked in Section~\ref{sec:analysis-results}.
+
+The same replay mechanism covers \scnref{AV-3}: after a \CentralMasterInventory crash it
+restarts, runs \opSubscribe to the \CFE, and runs \opReplay from its last applied
+sequence number against the CFE event store; because subscribers are idempotent by event
+ID, any duplicates are harmless. The replay and resync semantics (sequence numbers and
+gap handling) are specified in the interface specification, Section~\ref{sec:iep}.
 
 \begin{figure}[htbp]
 \centering
