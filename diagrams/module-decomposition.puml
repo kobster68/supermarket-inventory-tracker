@@ -2,52 +2,57 @@
 ' Primary presentation of the Module Decomposition view (the primary view).
 ' Authored in issue #9. Renders through scripts/render-diagrams.sh.
 ' Nesting shows the is-part-of relation; dashed <<uses>> arrows show the uses relation.
+' Leaf sub-modules are rectangles (referenced by alias) nested in the subsystem packages,
+' so the uses arrows resolve on every PlantUML version without quoted-name references.
 !include style.puml
 title Module decomposition view: package diagram
 
 skinparam packageStyle rectangle
 skinparam PackageBackgroundColor white
 skinparam PackageBorderColor #475569
+skinparam RectangleBackgroundColor #f8fafc
+skinparam RectangleBorderColor #475569
 skinparam nodesep 14
 skinparam ranksep 30
 
 package "Store Subsystem" as STORE #d5e8d4 {
-  package "POS Adapter"
-  package "Store Agent"
-  package "Store-Local\nInventory"
-  package "Outbox"
+  rectangle "POS Adapter"
+  rectangle "Store Agent"
+  rectangle "Store-Local\nInventory"
+  rectangle "Outbox"
 }
 
 package "Communications Front-End" as CFE #fff2cc {
-  package "Broker"
-  package "Event Store"
-  package "Subscription\nManagement"
+  rectangle "Broker"
+  rectangle "Event Store"
+  rectangle "Subscription\nManagement"
 }
 
 package "Distribution Center Subsystem" as DC #fff2cc {
-  package "DC Agent"
-  package "Central Master\nInventory"
-  package "Shipping-Order\nGeneration"
-  package "Supplier Gateway"
-  package "Store-Tracking\nClient"
-  package "Reporting Client"
+  rectangle "DC Agent"
+  rectangle "Central Master\nInventory"
+  rectangle "Shipping-Order\nGeneration"
+  rectangle "Supplier Gateway"
+  rectangle "Store-Tracking\nClient"
+  rectangle "Reporting Client"
 }
 
 package "Common" as COMMON #e2e8f0 {
-  package "Inventory Exchange\nProtocol Library"
-  package "Domain Model"
+  rectangle "Inventory Exchange\nProtocol Library" as IEPLIB
+  rectangle "Domain Model" as DM
 }
 
 ' ---- uses relations (5): every subsystem uses Common's Domain Model;
 '      the Store and DC subsystems also use the IEP library. ----------------------
-STORE ..> "Domain Model" : <<uses>>
-CFE   ..> "Domain Model" : <<uses>>
-DC    ..> "Domain Model" : <<uses>>
-STORE ..> "Inventory Exchange\nProtocol Library" : <<uses>>
-DC    ..> "Inventory Exchange\nProtocol Library" : <<uses>>
+STORE ..> DM : <<uses>>
+CFE   ..> DM : <<uses>>
+DC    ..> DM : <<uses>>
+STORE ..> IEPLIB : <<uses>>
+DC    ..> IEPLIB : <<uses>>
 
 legend right
 |= Notation |= Meaning |
+| coloured package | top-level module (subsystem) |
 | nested box | sub-module (the is-part-of relation) |
 | green fill | Store Subsystem (realises the store-side runtime components) |
 | yellow fill | distribution-center modules (realise the DC-side runtime components) |
