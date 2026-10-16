@@ -65,7 +65,7 @@ StockHolder <|-- Store
 StockHolder <|-- DistributionCenter
 
 ' ---- product families: a composite nested to unbounded depth -------------------
-ProductFamily "parent 0..1" o-- "0..* sub-families" ProductFamily : contains >
+ProductFamily "0..1" o-- "0..*" ProductFamily : sub-families
 ProductFamily "0..1" o-- "0..* products" Product : groups >
 
 ' ---- inventory held per holder per product -------------------------------------
