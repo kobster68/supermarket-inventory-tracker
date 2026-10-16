@@ -1,12 +1,142 @@
 % Section 3.2 Module Decomposition View (the primary view)
-% The decomposition packet (primary presentation, element catalog, context,
-% variability, background, related packets) is authored in issue #9; this file is
-% input from main.tex right after the Components-and-Connectors view.
+% The decomposition packet, authored in issue #9. Follows the same view-packet
+% structure as Section 3.1 (view description / primary presentation / element catalog /
+% context / variability / architecture background / related view packets).
 \subsection{Module Decomposition View}
 \label{sec:module-view}
 
-\todo{Completed in issue \#9: the module decomposition view packet --- view
-description, primary presentation (a package diagram), the domain-model class
-diagram, the element catalog mapping each module to the runtime components it
-realises, is-part-of and uses relations, interfaces, constraints, variability,
-architecture background, and related view packets.}
+% Pack the two figures and two tables near their text rather than on float pages, using
+% the same relaxed float-area fractions as the C&C view, scoped by \begingroup..\endgroup.
+\begingroup
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.7}
+\renewcommand{\textfraction}{0.15}
+\renewcommand{\floatpagefraction}{0.7}
+
+\subsubsection{View description}
+This is the primary view of the architecture: the code structure as a hierarchy of
+modules related by is-part-of, close to a domain model, from which the runtime components
+of the key view grow. It conforms to the module decomposition viewpoint of the SEI Views
+and Beyond template, whose element type is the module and whose relation is is-part-of
+(``Software Architecture Document Template,'' \S\,Module Decomposition Viewpoint; Bass,
+Clements, and Kazman 10--11). It shows the units a developer works in --- the Store
+Subsystem, the \CFE, the Distribution Center Subsystem and a Common module of shared code
+--- and which runtime component each realises, so the code and runtime structures can be
+read against each other.
+
+\subsubsection{Primary presentation}
+Figure~\ref{fig:module-decomposition} is a package diagram of the four top-level modules
+and their sub-modules. Nesting is the is-part-of relation and the dashed arrows are the
+uses relation; the notation is read from the figure's key.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth,height=0.35\textheight,keepaspectratio]{module-decomposition}
+\caption{Module decomposition view --- primary presentation.}
+\label{fig:module-decomposition}
+\end{figure}
+
+\subsubsection{Element catalog}
+
+\paragraph{Elements.}
+Table~\ref{tab:module-elements} lists the four top-level modules and the runtime
+components of the Components-and-Connectors view (Table~\ref{tab:cc-components}) each
+realises. Every runtime component is realised by exactly one module; the Common module
+realises none, being shared code rather than a running element.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\renewcommand{\arraystretch}{0.95}
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.17\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.30\linewidth}|}
+\hline
+\textbf{Module} & \textbf{Responsibility} & \textbf{Runtime components realised}\\\hline
+Store Subsystem & Code that runs in a store: converts point-of-sale records into \InventoryEvent{}s, keeps the store's own inventory copy, and buffers events for guaranteed, ordered delivery to the \DC. & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
+\CFE & The broker code at the \DC: persists each event, acknowledges it, manages subscriptions, and fans out by topic. Sub-modules: Broker, Event Store, Subscription Management. & \CFE\\\hline
+Distribution Center Subsystem & The \DC-side application code: the master record, shipping-order computation, the supplier exchange, and the subscriber clients. & \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway, \StoreTrackingClient, \ReportingClient\\\hline
+Common & Shared code used by the other three modules: the domain types (Figure~\ref{fig:domain-model}) and the \IEP library. & None\\\hline
+\end{tabularx}
+\caption{Element catalog --- modules of the module decomposition view and the runtime components each realises.}
+\label{tab:module-elements}
+\end{table}
+
+\paragraph{Domain model.}
+The Common module's Domain Model is decomposed in Figure~\ref{fig:domain-model}, a class
+diagram of the shared domain types: a product family is a composite that nests products
+and sub-families to an unbounded depth; an \InventoryEvent carries its source, product,
+sequence and quantity delta; an InventoryLevel is the stock of one product at one store
+or \DC; a ShippingOrder carries lines of product and quantity from the \DC to a store;
+and a report is one of the three the brief names --- lowest stock, overstocked items, and
+the total value of a product family. Every association carries multiplicities.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth,height=0.46\textheight,keepaspectratio]{domain-model}
+\caption{Module decomposition view --- the Common module's Domain Model.}
+\label{fig:domain-model}
+\end{figure}
+
+\paragraph{Relations.}
+\emph{Is-part-of} is the nesting in Figure~\ref{fig:module-decomposition}: each sub-module
+is part of its subsystem. \emph{Uses} is the five dashed arrows: the Store Subsystem, the
+\CFE and the Distribution Center Subsystem each use the Common Domain Model, and the Store
+and Distribution Center subsystems additionally use the \IEP library. No other
+module-to-module dependency exists.
+
+\paragraph{Interfaces.}
+The only interface a module view fixes is the provided interface of the \IEP library, the
+full specification of Section~\ref{sec:iep}; the other shared contract is the set of
+domain types in Figure~\ref{fig:domain-model}.
+
+\paragraph{Behavior.}
+A module view records no runtime behavior; the event flow and the outage-and-replay
+behavior are documented in the Components-and-Connectors view (Section~\ref{sec:cc-view}).
+
+\paragraph{Constraints.}
+\begin{itemize}[nosep]
+  \item The Common module depends on none of the subsystems; every dependency points into
+  Common, never out of it.
+  \item The Store Subsystem does not depend on the Distribution Center Subsystem (only on
+  Common), so a store can be built, tested and deployed on its own.
+  \item Each runtime component of the Components-and-Connectors view is realised by exactly
+  one module.
+\end{itemize}
+
+\subsubsection{Context diagram}
+The module view shares the system boundary of the key view, fixed by the context diagram
+of the Components-and-Connectors view (Figure~\ref{fig:cc-context}) and not repeated here;
+the external point-of-sale and supplier/ERP systems are reached only through the
+\POSAdapter and \SupplierGateway modules.
+
+\subsubsection{Variability mechanisms}
+\label{sec:module-variability}
+\begin{itemize}[nosep]
+  \item \emph{A new client type:} a new sub-module of the Distribution Center Subsystem
+  that uses the \IEP library, with no change to existing modules (\scnref{MOD-1},
+  \scnref{INT-2}).
+  \item \emph{Deeper product families:} nesting depth lives in the composite in the domain
+  model, so a new level is a data change, not a module change (\scnref{MOD-2}).
+  \item \emph{More stores:} not a module concern --- every store is the same Store
+  Subsystem, so the chain grows by instances, not modules (\scnref{SCAL-1}).
+  \item \emph{A new platform:} platform-specific code is confined to the adapter
+  sub-modules (the \POSAdapter and \SupplierGateway), so a port touches only those
+  (\scnref{PORT-1}).
+\end{itemize}
+
+\subsubsection{Architecture background}
+This decomposition is organised for modifiability, the quality the decomposition structure
+most directly determines (Bass, Clements, and Kazman 10), using three coupling-reducing
+tactics (Bass, Clements, and Kazman 123--124): \emph{encapsulate} (each subsystem hides
+its internals and platform-specific code is confined to the adapters), \emph{use an
+intermediary} (the \IEP library carries events between the Store and Distribution Center
+subsystems, so neither depends on the other), and \emph{restrict dependencies}
+(dependencies run one way, into Common, so a store builds and deploys alone and a new
+client is added without touching existing modules).
+
+\subsubsection{Related view packets}
+This primary view maps onto the Components-and-Connectors key view
+(Section~\ref{sec:cc-view}); the module-to-component mapping is collected in
+Section~\ref{sec:relations}. The Allocation view, deferred to the second draft, will map
+these modules and components onto the nodes they are built and run on.
+\endgroup
