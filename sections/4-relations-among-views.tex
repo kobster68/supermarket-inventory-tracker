@@ -1,9 +1,31 @@
 % Section 4 Relations Among Views
-% Owner: Slice 2 (issue #3). The section heading is in main.tex.
-This draft contains a single view, the Components-and-Connectors view of
-Section~\ref{sec:cc-view}, so there are no relations between views to reconcile yet and
-no inconsistencies to record. The second draft will add a Module view and an Allocation
-view, and both will map onto this view through the element names fixed here: each runtime
-component will map to the module or modules that implement it, and to the node it runs
-on. We will record those mappings, and any inconsistency they reveal, in this section
-when those views are written.
+% Owner: Slice 2 (issue #3); extended for the module decomposition view (issue #9).
+% The section heading is in main.tex.
+This draft contains two views: the module decomposition view --- the primary view,
+Section~\ref{sec:module-view} --- and the Components-and-Connectors view --- the key
+runtime view, Section~\ref{sec:cc-view}. The two are consistent. Every runtime component
+of the C\&C view is realised by exactly one module of the module view, as
+Table~\ref{tab:view-mapping} records. The module view adds one module, Common, that is
+implementation-only --- the shared domain types and the \IEP library --- and so has no
+runtime component of its own. We found no inconsistency between the two views.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.95}
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.30\linewidth}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Module (module view)} & \textbf{Runtime components it realises (C\&C view)}\\\hline
+Store Subsystem & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
+\CFE & \CFE\\\hline
+Distribution Center Subsystem & \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway, \StoreTrackingClient, \ReportingClient\\\hline
+Common & None --- shared code used by the other three modules\\\hline
+\end{tabularx}
+\caption{Module-to-runtime-component mapping between the module decomposition view and the Components-and-Connectors view.}
+\label{tab:view-mapping}
+\end{table}
+
+The Allocation view, deferred to the second draft, will extend this mapping by placing
+each module and component on the node it is built and run on, and we will record any
+inconsistency it reveals here.
