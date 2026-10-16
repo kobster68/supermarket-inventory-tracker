@@ -1,0 +1,99 @@
+@startuml
+' Class diagram decomposing the Common module's Domain Model.
+' Authored in issue #9. Renders through scripts/render-diagrams.sh.
+' Every association carries multiplicities; the key names each relation type.
+!include style.puml
+title Domain model: class diagram of the Common module
+
+skinparam class {
+  BackgroundColor #f8fafc
+  BorderColor #475569
+  AttributeFontColor #334155
+}
+skinparam nodesep 16
+skinparam ranksep 32
+
+abstract class StockHolder {
+  id
+  name
+}
+class Store
+class DistributionCenter
+
+class Product {
+  id
+  name
+  unitValue
+}
+
+class ProductFamily {
+  name
+}
+
+class InventoryLevel {
+  quantity
+}
+
+class InventoryEvent {
+  id
+  sequence
+  delta
+  timestamp
+  type
+}
+
+class ShippingOrder {
+  id
+}
+
+class ShippingOrderLine {
+  quantity
+}
+
+class Report {
+  generatedAt
+}
+
+enum ReportType {
+  LowestStock
+  OverstockedItems
+  ProductFamilyTotalValue
+}
+
+' ---- generalization (is-a) ----------------------------------------------------
+StockHolder <|-- Store
+StockHolder <|-- DistributionCenter
+
+' ---- product families: a composite nested to unbounded depth -------------------
+ProductFamily "parent 0..1" o-- "0..* sub-families" ProductFamily : contains >
+ProductFamily "0..1" o-- "0..* products" Product : groups >
+
+' ---- inventory held per holder per product -------------------------------------
+StockHolder "1" o-- "0..*" InventoryLevel : holds >
+InventoryLevel "0..*" --> "1" Product : of >
+
+' ---- events reference their source holder and product --------------------------
+InventoryEvent "0..*" --> "1" StockHolder : source >
+InventoryEvent "0..*" --> "1" Product : product >
+
+' ---- shipping orders: lines of product + quantity, from a DC to a store --------
+DistributionCenter "1" --> "0..*" ShippingOrder : issues >
+ShippingOrder "0..*" --> "1" Store : to >
+ShippingOrder "1" *-- "1..*" ShippingOrderLine : lines >
+ShippingOrderLine "0..*" --> "1" Product : item >
+
+' ---- reports: one of three kinds; the family-value report scopes a family -------
+Report "0..*" --> "1" ReportType : kind >
+Report "0..*" ..> "0..1" ProductFamily : scopes >
+
+legend right
+|= Notation |= Meaning |
+| class box | a domain type in the Domain Model module |
+| triangle (hollow) | generalization (is-a) |
+| open diamond | aggregation (whole has parts) |
+| filled diamond | composition (whole owns its parts) |
+| solid arrow | association; label names the role, numbers are multiplicities |
+| dashed arrow | dependency (uses) |
+| <<enumeration>> | a fixed set of values |
+endlegend
+@enduml

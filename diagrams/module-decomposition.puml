@@ -1,0 +1,57 @@
+@startuml
+' Primary presentation of the Module Decomposition view (the primary view).
+' Authored in issue #9. Renders through scripts/render-diagrams.sh.
+' Nesting shows the is-part-of relation; dashed <<uses>> arrows show the uses relation.
+!include style.puml
+title Module decomposition view: package diagram
+
+skinparam packageStyle rectangle
+skinparam PackageBackgroundColor white
+skinparam PackageBorderColor #475569
+skinparam nodesep 14
+skinparam ranksep 30
+
+package "Store Subsystem" as STORE #d5e8d4 {
+  package "POS Adapter"
+  package "Store Agent"
+  package "Store-Local\nInventory"
+  package "Outbox"
+}
+
+package "Communications Front-End" as CFE #fff2cc {
+  package "Broker"
+  package "Event Store"
+  package "Subscription\nManagement"
+}
+
+package "Distribution Center Subsystem" as DC #fff2cc {
+  package "DC Agent"
+  package "Central Master\nInventory"
+  package "Shipping-Order\nGeneration"
+  package "Supplier Gateway"
+  package "Store-Tracking\nClient"
+  package "Reporting Client"
+}
+
+package "Common" as COMMON #e2e8f0 {
+  package "Inventory Exchange\nProtocol Library"
+  package "Domain Model"
+}
+
+' ---- uses relations (5): every subsystem uses Common's Domain Model;
+'      the Store and DC subsystems also use the IEP library. ----------------------
+STORE ..> "Domain Model" : <<uses>>
+CFE   ..> "Domain Model" : <<uses>>
+DC    ..> "Domain Model" : <<uses>>
+STORE ..> "Inventory Exchange\nProtocol Library" : <<uses>>
+DC    ..> "Inventory Exchange\nProtocol Library" : <<uses>>
+
+legend right
+|= Notation |= Meaning |
+| nested box | sub-module (the is-part-of relation) |
+| green fill | Store Subsystem (realises the store-side runtime components) |
+| yellow fill | distribution-center modules (realise the DC-side runtime components) |
+| grey fill | Common: shared code, realises no runtime component on its own |
+| dashed arrow <<uses>> | one module uses another (depends on it) |
+endlegend
+@enduml
