@@ -18,8 +18,8 @@ runtime component of its own. We found no inconsistency between the two views.
 \hline
 \textbf{Module (module view)} & \textbf{Runtime components it realises (C\&C view)}\\\hline
 Store Subsystem & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
-\CFE & \CFE\\\hline
-Distribution Center Subsystem & \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway, \StoreTrackingClient, \ReportingClient\\\hline
+\CFE & \CFE, CFE event store\\\hline
+Distribution Center Subsystem & \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
 Common & None --- shared code used by the other three modules\\\hline
 \end{tabularx}
 \caption{Module-to-runtime-component mapping between the module decomposition view and the Components-and-Connectors view.}
