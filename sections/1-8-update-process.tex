@@ -2,4 +2,13 @@
 % Owner: Slice 4 (issue #5).
 \subsection{Process for Updating this SAD}
 \label{sec:update-process}
-\todo{To be completed in Slice 4 (issue \#5): one paragraph describing how a change to this document is proposed, reviewed, and merged through a pull request.}
+We maintain LaTeX and PlantUML sources in GitHub, following the SEI Views and Beyond
+structure. Changes use branch-based pull requests with another author's review of the
+source and PDF before merge. CI compiles the PDF and runs lint checks. The revision
+history (Section~\ref{sec:doc-control}) records integrated draft and submission milestones.
+
+We coordinate through Slack and divide work into four slices: Leon Letournel owns
+overview, context and requirements, reviewed by Mike Andrews; Godson Umoren owns runtime
+and module views, reviewed by Kobe Laprade; Kobe Laprade owns the \IEP specification,
+reviewed by Leon Letournel; Mike Andrews owns approaches, tactics and analysis, reviewed
+by Godson Umoren. Later drafts extend these areas through the same review process.
