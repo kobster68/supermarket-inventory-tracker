@@ -88,7 +88,7 @@ behaviour. Repeated headers keep the table groups readable.
   {Identity infrastructure and permission administration.}
 \tacticrow{\scnref{SEC-2}}
   {Encrypt data (175); Verify message integrity (174); Authenticate actors (174)}
-  {Protected store--\DC connections; TLS is a candidate, with endpoint authentication to specify.}
+  {TLS on store--\DC legs, as the runtime view specifies; endpoint authentication and authorization mechanisms remain open.}
   {Key/credential management and cryptographic overhead.}
 \tacticrow{\scnref{SEC-3}}
   {Authorize actors (174)}
@@ -149,9 +149,8 @@ behaviour. Repeated headers keep the table groups readable.
 
 \paragraph{Decisions to reconcile.}
 We still need restart escalation and node/storage recovery, full-\Outbox behaviour,
-and a retention/replay policy covering subscriber interruptions. The secure-channel
-mechanism, peer authentication and role/scope policy remain options; the runtime
-view's TLS label must reflect that status. The manager-facing order interaction needs
+and a retention/replay policy covering subscriber interruptions. Peer authentication
+and role/scope policy remain options. The manager-facing order interaction needs
 an owner without assuming a new approval rule; external order dispatch also needs a
 duplicate-safe handoff. Portability must cover persistence
 and restart supervision as well as external-system adapters. The term \emph{failover}
