@@ -1,9 +1,48 @@
 % Section 2.2.1 Architectural Approaches
-% Owner: Slice 4 (issue #5). Step 0 seeds one worked tactics-table row (AV-1) as a
-% template; Slice 4 writes the baseline prose, the system-wide rationale and rejected
-% alternatives, and the remaining tactics rows.
+% Owner: Slice 4 (issue #5).
 \subsubsection{Architectural Approaches}
 \label{sec:approaches}
+
+We use a \POSAdapter to translate sales records for the \StoreAgent, which saves an
+inventory change and its \Outbox event in one local transaction. This realises the
+Transactions tactic (Bass, Clements, and Kazman 61). The \Outbox forwards committed
+events to the \CFE and retains unacknowledged events for Retry (60), preserving their
+event IDs. Subscribers applying inventory updates must atomically save their state
+changes, duplicate-detection records and contiguous per-source processing progress.
+Repeated delivery can then have one inventory effect. Retry limits and escalation
+must retain undelivered records rather than discard committed changes.
+
+The \CFE persists events before returning an \Acknowledgement, then distributes
+them to \CentralMasterInventory, \ShippingOrderGen, \StoreTrackingClient and
+\ReportingClient. The \DCAgent publishes the \DC's own stock events; the
+\SupplierGateway exchanges orders and receipts with the external supplier/ERP system.
+Publish--subscribe realises Use an intermediary (107; 129--30), supporting a variable
+client population. The \IEP and \InventoryEvent definitions form a shared local
+standard, realising Adhere to standards (107). An acknowledgement confirms durable
+central acceptance, not completion by every subscriber; the central event store must
+retain the history needed for subscriber recovery.
+
+\paragraph{Alternatives and trade-offs.}
+We prefer local commitment followed by asynchronous delivery over requiring a
+successful synchronous \DC call before each local update: synchronous confirmation
+would make store operation depend on the WAN and central service. We also prefer an
+\Outbox over a full broker in every store, because the current local responsibility
+is durable forwarding, while subscription management and fan-out are centralised.
+These choices reduce local messaging infrastructure and duplicated routing logic,
+but introduce queues, retry traffic and temporary differences between local and
+central inventory. The delivery argument assumes surviving durable records, eventual
+communication recovery and sufficient storage; buffering does not establish an
+unconditional guarantee under permanent isolation or storage loss.
+
+\paragraph{Local recovery.}
+For the local-service outage limit, we propose supervised \StoreAgent restart as an
+initial level of Escalating restart (60--61). The restarted agent reopens the recovered
+\StoreLocalInventory and resumes pending \Outbox transmissions with their original
+IDs. A local snapshot is a recovery checkpoint only when committed changes after it
+can also be recovered; pending outgoing events alone are not a complete inventory
+history. Detection, restart and restoration of usable local access must together
+meet the 30-minute limit. Further escalation and recovery from machine or storage
+failure remain to be specified and validated.
 
 The tactics chosen for each quality attribute are recorded in a table that ties each
 scenario to a tactic --- named and paged against the fourth edition of
@@ -17,4 +56,12 @@ design, and to its trade-off. One row is seeded here as a worked example.
   {Store-local availability is bought at the cost of the \CentralMasterInventory being briefly stale --- an availability-for-consistency trade-off.}
 \end{tacticstable}
 
-\todo{To be completed in Slice 4 (issue \#5): the baseline in prose, the system-wide rationale and the rejected alternatives (synchronous client--server, federated brokers), and a tactics row for every scenario identifier, including a store-node recovery tactic for the 30-minute cap and the security tactics presented as options.}
+\paragraph{Decisions to reconcile.}
+We still need restart escalation and node/storage recovery, full-\Outbox behaviour,
+and a retention/replay policy covering subscriber interruptions. The secure-channel
+mechanism, peer authentication and role/scope policy remain options; the runtime
+view's TLS label must reflect that status. The manager-facing order interaction needs
+an owner without assuming a new approval rule; external order dispatch also needs a
+duplicate-safe handoff. Portability must cover persistence
+and restart supervision as well as external-system adapters. The term \emph{failover}
+in \scnref{TEST-2} must be aligned with the restart-based recovery being proposed.
