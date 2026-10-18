@@ -67,7 +67,13 @@ CI runs in the pinned container `texlive/texlive:TL2025-historic` and adds
 `plantuml`, `graphviz`, `librsvg2-bin` (for `rsvg-convert`) and `poppler-utils` (for
 `pdfinfo`) with `apt`. It then runs `scripts/build.sh` (which renders the diagrams,
 compiles the document, prints the page count, and fails if `main.pdf` was not
-produced) and `scripts/lint.sh`, and uploads `main.pdf` as an artifact. The
+produced) and `scripts/lint.sh`, and uploads `main.pdf` as an artifact. On every
+merge to `main` that builds green, that same `main.pdf` is also attached to a rolling
+pre-release so
+<https://github.com/kobster68/supermarket-inventory-tracker/releases/download/latest/main.pdf>
+always serves the current document. That `latest` release is a rolling pre-release
+rebuilt on every merge to `main`, not a submission; submissions use a dated release
+(for example `first-draft`), which stays manual. The
 **Build SAD** check should be marked a required status check on pull requests in the
 repository's branch-protection settings.
 

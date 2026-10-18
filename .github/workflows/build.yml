@@ -56,3 +56,57 @@ jobs:
           name: main-pdf
           path: main.pdf
           if-no-files-found: error
+
+  publish-latest:
+    # On every push to main that built green, attach that same main.pdf to a rolling
+    # pre-release tagged "latest", so
+    # https://github.com/kobster68/supermarket-inventory-tracker/releases/download/latest/main.pdf
+    # always serves the current document. This runs only after the build job
+    # succeeds (so lint and the artifact upload have already passed) and reuses the
+    # PDF the build produced via the uploaded artifact. It runs on the host runner
+    # rather than the TeX Live container because the gh CLI used below ships on the
+    # runner image but is not present in that container. Real submission releases
+    # (e.g. first-draft) are tagged by hand and are out of scope here.
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Only this job needs write access; everything else stays on the read-only
+    # default declared at the top of the file.
+    permissions:
+      contents: write
+    # Serialize the main-branch publish so two quick merges cannot race on the
+    # delete-and-recreate of the single "latest" release; never cancel one in flight.
+    # Ordering is handled by the stale check below: a run whose commit is no longer
+    # the tip of main skips the publish instead of overwriting a newer PDF.
+    concurrency:
+      group: latest-release
+      cancel-in-progress: false
+    steps:
+      - name: Download the built main.pdf
+        uses: actions/download-artifact@v4
+        with:
+          name: main-pdf
+
+      - name: Skip if main has moved past this commit
+        id: stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)"
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "main is at $tip, this run built $GITHUB_SHA; a newer build will publish."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish main.pdf to the rolling "latest" pre-release
+        if: steps.stale.outputs.stale != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag -y || true
+          gh release create latest main.pdf \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Latest build of main" \
+            --notes "Built from $GITHUB_SHA by run $GITHUB_RUN_ID. Rolling pre-release; use a dated release for submissions."
