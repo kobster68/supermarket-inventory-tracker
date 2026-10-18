@@ -2,4 +2,32 @@
 % Owner: Slice 4 (issue #5).
 \subsubsection{Analysis Results}
 \label{sec:analysis-results}
-\todo{To be completed in Slice 4 (issue \#5): the downtime budget for 99\% availability, the \Outbox buffer sizing for a 30-minute outage at 100 events/s, and the 1,000 events/s aggregate throughput at the \DC.}
+
+We derive the following estimates from the quality requirements in the
+\emph{Supermarket Inventory Tracking System} project brief. These are workload and
+capacity calculations, not measured performance results.
+
+\paragraph{Local availability.}
+For an observation period \(T\), 99\% availability allows at most \(0.01T\) downtime.
+Over an illustrative 30-day period, this is
+\(30 \times 24 \times 60 \times 0.01 = 432\) minutes, or 7 hours 12 minutes.
+Table~4.1 uses a 90-day period and lists 21 hours 36 minutes for 99\% availability
+(Bass, Clements, and Kazman 53). Our observation period and downtime-accounting rules
+remain to be agreed. Independently, the brief permits no individual local-inventory
+outage longer than 30 minutes; a total budget does not override that cap.
+
+\paragraph{Store buffer capacity.}
+At 100 events/s, an illustrative 30-minute WAN interruption generates
+\(100 \times 30 \times 60 = 180{,}000\) additional events per store.
+The \Outbox needs capacity for that backlog, plus existing queued events, operating
+headroom and storage overhead. A byte allocation requires the persisted event size.
+The 30-minute WAN duration is a sizing assumption, not a maximum network outage
+established by the brief's separate local-access limit.
+
+\paragraph{Central throughput.}
+Three stores produce up to \(3 \times 100 = 300\) new store events/s; ten produce
+\(10 \times 100 = 1{,}000\). The \CFE and central processing path must also account
+for \DC events, retries, subscriber fan-out and replay traffic. To drain a backlog,
+effective processing capacity must exceed the ongoing arrival rate. We therefore
+need workload validation with recovery traffic, not only a steady 1,000 events/s
+input test; these calculations alone establish no achieved throughput.
