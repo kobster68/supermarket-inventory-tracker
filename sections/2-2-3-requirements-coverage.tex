@@ -62,7 +62,7 @@ External subsystems and explicitly defined exchanged information.
 & \Outbox retention, durable \CFE acceptance, \opReplay and atomic duplicate-safe processing by \CentralMasterInventory. Recovery assumptions bound the claim.\\\hline
 100 events/s/store; growth from three stores and one \DC to ten stores and one \DC.
 & \scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}
-& Introduce concurrency (P); Bound queue sizes (P); Configuration-time binding (P)
+& Introduce concurrency (P); Bound queue sizes (P); Defer binding (configuration time) (P)
 & Configured \StoreAgent instances; sized \Outbox and central capacity for 1{,}000 new store events/s plus recovery traffic. Load validation remains required.\\\hline
 Database access limited to authorized managers and agents; scoped permissions.
 & \scnref{SEC-1}, \scnref{SEC-3}
@@ -82,7 +82,7 @@ Hidden maintainability and testability requirements.
 & Stable \CFE/catalog boundaries; controlled loss/crash tests and observable \Outbox, \CFE and subscriber state (P).\\\hline
 Hidden portability requirement.
 & \scnref{PORT-1}
-& Encapsulate (P); Adhere to standards; Configuration-time binding (P)
+& Encapsulate (P); Adhere to standards; Defer binding (configuration time) (P)
 & \IEP plus proposed platform adapters and deployment configuration for \StoreAgent and \DC services; target-platform validation remains required.\\\hline
 \end{tabularx}
 \endgroup
