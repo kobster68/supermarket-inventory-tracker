@@ -4,11 +4,13 @@
 \label{sec:update-process}
 We maintain LaTeX and PlantUML sources in GitHub, following the SEI Views and Beyond
 structure. Changes use branch-based pull requests with another author's review of the
-source and PDF before merge. CI compiles the PDF and runs lint checks. The revision
-history (Section~\ref{sec:doc-control}) records integrated draft and submission milestones.
+source and PDF before merge. CI compiles the PDF and runs lint checks on every push
+and pull request. The revision history (Section~\ref{sec:doc-control}) records
+integrated draft and submission milestones.
 
-We coordinate through Slack and divide work into four slices: Leon Letournel owns
-overview, context and requirements, reviewed by Mike Andrews; Godson Umoren owns runtime
-and module views, reviewed by Kobe Laprade; Kobe Laprade owns the \IEP specification,
-reviewed by Leon Letournel; Mike Andrews owns approaches, tactics and analysis, reviewed
-by Godson Umoren. Later drafts extend these areas through the same review process.
+We coordinate through Slack and divide the initial work into four slices: Leon
+Letournel owns overview, context and requirements, reviewed by Mike Andrews; Godson
+Umoren owns the runtime (C\&C) view, reviewed by Kobe Laprade; Kobe Laprade owns the
+\IEP specification, reviewed by Leon Letournel; Mike Andrews owns approaches, tactics
+and analysis, reviewed by Godson Umoren. The module decomposition view is tracked
+separately in issue~\#9. Later drafts extend these areas through the same review process.
