@@ -44,17 +44,108 @@ history. Detection, restart and restoration of usable local access must together
 meet the 30-minute limit. Further escalation and recovery from machine or storage
 failure remain to be specified and validated.
 
-The tactics chosen for each quality attribute are recorded in a table that ties each
-scenario to a tactic --- named and paged against the fourth edition of
-\emph{Software Architecture in Practice} --- to where the tactic appears in the
-design, and to its trade-off. One row is seeded here as a worked example.
+\paragraph{Scenario tactics.}
+The following rows cover every scenario ID. Parenthesised page numbers refer to
+Bass, Clements, and Kazman, fourth edition. Rows marked \emph{proposed} or
+\emph{options} describe refinements to allocate and validate, rather than demonstrated
+behaviour. Repeated headers keep the table groups readable.
 
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.0}
 \begin{tacticstable}
 \tacticrow{\scnref{AV-1}}
-  {Graceful degradation, a recover-from-faults tactic (Bass, Clements, and Kazman 60)}
-  {The \StoreAgent keeps serving the \StoreLocalInventory while the \Outbox buffers outbound events for replay on reconnect.}
-  {Store-local availability is bought at the cost of the \CentralMasterInventory being briefly stale --- an availability-for-consistency trade-off.}
+  {Graceful degradation (60)}
+  {\StoreAgent serves \StoreLocalInventory; \Outbox buffers during WAN loss.}
+  {Central state lags; storage capacity limits disconnected operation.}
+\tacticrow{\scnref{AV-2}}
+  {Transactions (61); Retry (60)}
+  {Atomic local update/append; \CFE durable acknowledgement; same-ID retries.}
+  {Extra persistence, traffic and duplicate tracking.}
+\tacticrow{\scnref{AV-3}}
+  {Transactions (61)}
+  {Proposed atomic \CentralMasterInventory state/progress save; \opReplay through \CFE.}
+  {Retained history and a central recovery delay.}
+\tacticrow{\scnref{PERF-1}}
+  {Introduce concurrency (141)}
+  {Proposed independent local processing and \Outbox transmission, preserving source order.}
+  {Coordination and resource overhead; validate 100 events/s.}
+\tacticrow{\scnref{PERF-2}}
+  {Introduce concurrency (141); Bound queue sizes (142)}
+  {Proposed concurrent central processing with explicit queue limits.}
+  {Contention; full-queue policy and recovery headroom required.}
+\tacticrow{\scnref{PERF-3}}
+  {Increase efficiency of resource usage (141)}
+  {Proposed indexed inventory queries and arbitrary-depth family traversal.}
+  {Index storage, update overhead and query complexity.}
 \end{tacticstable}
+
+\begin{tacticstable}
+\tacticrow{\scnref{SEC-1}}
+  {Authenticate actors; Authorize actors (174)}
+  {Options for manager/agent identities, inventory access checks and restricted database accounts.}
+  {Identity infrastructure and permission administration.}
+\tacticrow{\scnref{SEC-2}}
+  {Encrypt data (175); Verify message integrity; Authenticate actors (174)}
+  {Protected store--\DC connections; TLS is a candidate, with endpoint authentication to specify.}
+  {Key/credential management and cryptographic overhead.}
+\tacticrow{\scnref{SEC-3}}
+  {Authorize actors (174)}
+  {Proposed operation and inventory-scope checks in \StoreAgent and \CentralMasterInventory access paths.}
+  {Accurate scope assignments and consistent enforcement.}
+\tacticrow{\scnref{SCAL-1}}
+  {Configuration-time binding (124)}
+  {Proposed store identities and connection settings supplied at deployment.}
+  {Provisioning work; central throughput needs separate validation.}
+\tacticrow{\scnref{SCAL-2}}
+  {Use an intermediary (107)}
+  {\CFE registers conforming subscribers through \opSubscribe at runtime.}
+  {Each client adds distribution work and possible backlog.}
+\end{tacticstable}
+
+\begin{tacticstable}
+\tacticrow{\scnref{USE-1}}
+  {Maintain task model (201)}
+  {Proposed order-task context and guidance; manager-facing entry point to assign.}
+  {Interaction-state logic; minimal-training criterion to define.}
+\tacticrow{\scnref{USE-2}}
+  {Maintain task model (201)}
+  {Proposed \ReportingClient guidance based on report type, inputs and scope.}
+  {Per-report interaction logic and user evaluation.}
+\tacticrow{\scnref{MOD-1}}
+  {Use an intermediary (107; 123)}
+  {New client uses \IEP without changing existing publishers.}
+  {Shared-contract compatibility and extra subscriber load.}
+\tacticrow{\scnref{MOD-2}}
+  {Encapsulate (106; 123)}
+  {Proposed shared hierarchy operations over recursive product-family relationships.}
+  {Traversal and cycle-validation complexity.}
+\tacticrow{\scnref{INT-1}}
+  {Use an intermediary; Adhere to standards (107)}
+  {\POSAdapter and \SupplierGateway map external exchanges to defined internal contracts.}
+  {Mapping maintenance; identifiers, units and meaning must agree.}
+\tacticrow{\scnref{INT-2}}
+  {Use an intermediary (107)}
+  {\CFE subscription interface serves a variable number of conforming clients.}
+  {Central dependency and fan-out resource costs.}
+\end{tacticstable}
+
+\begin{tacticstable}
+\tacticrow{\scnref{TEST-1}}
+  {Specialized interfaces (188); Sandbox (189)}
+  {Proposed isolated test instance with controlled message/acknowledgement loss and observable outcomes.}
+  {Test infrastructure; finite cases support only stated assumptions.}
+\tacticrow{\scnref{TEST-2}}
+  {Specialized interfaces (188); Sandbox (189)}
+  {Proposed isolated test instance with failure injection and timing to usable inventory access.}
+  {Instrumentation overhead; real recovery time must be measured.}
+\tacticrow{\scnref{PORT-1}}
+  {Encapsulate (106); Configuration-time binding (124)}
+  {Proposed boundaries for persistence, process supervision and platform settings.}
+  {Platform integrations, configuration and target-platform validation.}
+\end{tacticstable}
+\endgroup
 
 \paragraph{Decisions to reconcile.}
 We still need restart escalation and node/storage recovery, full-\Outbox behaviour,
