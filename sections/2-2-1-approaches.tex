@@ -16,7 +16,7 @@ The \CFE persists events before returning an \Acknowledgement, then distributes
 them to \CentralMasterInventory, \ShippingOrderGen, \StoreTrackingClient and
 \ReportingClient. The \DCAgent publishes the \DC's own stock events; the
 \SupplierGateway exchanges orders and receipts with the external supplier/ERP system.
-Publish--subscribe realises Use an intermediary (107; 129--30), supporting a variable
+Publish--subscribe realises Use an intermediary (107; 123), supporting a variable
 client population. The \IEP and \InventoryEvent definitions form a shared local
 standard, realising Adhere to standards (107). An acknowledgement confirms durable
 central acceptance, not completion by every subscriber; the central event store must
@@ -87,7 +87,7 @@ behaviour. Repeated headers keep the table groups readable.
   {Options for manager/agent identities, inventory access checks and restricted database accounts.}
   {Identity infrastructure and permission administration.}
 \tacticrow{\scnref{SEC-2}}
-  {Encrypt data (175); Verify message integrity; Authenticate actors (174)}
+  {Encrypt data (175); Verify message integrity (174); Authenticate actors (174)}
   {Protected store--\DC connections; TLS is a candidate, with endpoint authentication to specify.}
   {Key/credential management and cryptographic overhead.}
 \tacticrow{\scnref{SEC-3}}
