@@ -2,4 +2,92 @@
 % Owner: Slice 4 (issue #5).
 \subsubsection{Requirements Coverage}
 \label{sec:requirements-coverage}
-\todo{To be completed in Slice 4 (issue \#5): the traceability table mapping each requirement to a scenario, a tactic, and the element where it is realised, including the external-systems requirement.}
+We trace the brief's requirements to scenarios, tactics and responsible elements below.
+These are design mappings, not evidence that the requirements have been demonstrated.
+Tactic definitions, textbook pages and decision status appear in
+Section~\ref{sec:approaches}; (P) marks a proposed refinement.
+
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.05}
+\noindent\textbf{Functional responsibilities.}\par
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.25\linewidth}|>{\raggedright\arraybackslash}p{0.13\linewidth}|>{\raggedright\arraybackslash}p{0.23\linewidth}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Requirement} & \textbf{Scenario} & \textbf{Named tactic} & \textbf{Responsible elements / mechanism}\\\hline
+Real-time sales; local store inventory and a master covering store and \DC stock.
+& \scnref{PERF-1}, \scnref{AV-1}, \scnref{AV-3}
+& Transactions; Retry
+& \POSAdapter feeds \StoreAgent; \StoreLocalInventory holds local state; \CentralMasterInventory consumes store and \DCAgent events.\\\hline
+Shipping orders from minimum stock quantities and current sales.
+& \scnref{USE-1}
+& Maintain task model (P), for manager assistance
+& \ShippingOrderGen computes orders; a manager-facing task flow remains proposed.\\\hline
+Front-end, exchange protocol and alerts for central inventory, store tracking and variable additional clients.
+& \scnref{INT-1}, \scnref{INT-2}, \scnref{SCAL-2}, \scnref{MOD-1}
+& Use an intermediary; Adhere to standards
+& \CFE and \IEP; \opSubscribe/\opUnsubscribe connect \CentralMasterInventory, \StoreTrackingClient and other clients.\\\hline
+Arbitrarily nested product families.
+& \scnref{MOD-2}
+& Encapsulate (P)
+& Recursive catalog relationships and traversal behind a stable catalog interface (P); no fixed category-depth assumptions.\\\hline
+Lowest-stock, overstock and total family-value reports.
+& \scnref{PERF-3}, \scnref{USE-2}
+& Increase efficiency of resource usage (P); Maintain task model (P)
+& \ReportingClient queries \CentralMasterInventory; query optimization and contextual report guidance are proposed.\\\hline
+External subsystems and explicitly defined exchanged information.
+& \scnref{INT-1}
+& Use an intermediary; Adhere to standards
+& \POSAdapter: sales in; \SupplierGateway: orders out, receipts in; \IEP defines \InventoryEvent and delivery operations. External wire formats need owner confirmation.\\\hline
+\end{tabularx}
+\endgroup
+
+\begingroup
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.05}
+\noindent\textbf{Quality attributes and hidden requirements.}\par
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.25\linewidth}|>{\raggedright\arraybackslash}p{0.13\linewidth}|>{\raggedright\arraybackslash}p{0.23\linewidth}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Requirement} & \textbf{Scenario} & \textbf{Named tactic} & \textbf{Responsible elements / mechanism}\\\hline
+99\% local inventory access; no single outage over 30 minutes.
+& \scnref{AV-1}, \scnref{TEST-2}
+& Graceful degradation; Escalating restart (P)
+& \StoreLocalInventory remains local; \StoreAgent recovery uses durable state. Detection, supervision and escalation need refinement and timed validation.\\\hline
+100\% delivery and processing of store events at the \DC.
+& \scnref{AV-2}, \scnref{AV-3}
+& Transactions; Retry
+& \Outbox retention, durable \CFE acceptance, \opReplay and atomic duplicate-safe processing by \CentralMasterInventory. Recovery assumptions bound the claim.\\\hline
+100 events/s/store; growth from three stores and one \DC to ten stores and one \DC.
+& \scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}
+& Introduce concurrency (P); Bound queue sizes (P); Configuration-time binding (P)
+& Configured \StoreAgent instances; sized \Outbox and central capacity for 1{,}000 new store events/s plus recovery traffic. Load validation remains required.\\\hline
+Database access limited to authorized managers and agents; scoped permissions.
+& \scnref{SEC-1}, \scnref{SEC-3}
+& Authenticate actors; Authorize actors (P)
+& Protected \StoreAgent and \CentralMasterInventory access paths and database accounts; identity and scope enforcement require refinement.\\\hline
+Secure store--\DC communication.
+& \scnref{SEC-2}
+& Encrypt data; Verify message integrity; Authenticate actors (P)
+& \IEP connections between \Outbox and \CFE; secure-channel and endpoint-authentication mechanisms remain options.\\\hline
+Understandable orders and reports with minimal manager training.
+& \scnref{USE-1}, \scnref{USE-2}
+& Maintain task model (P)
+& Proposed manager guidance around \ShippingOrderGen and \ReportingClient; validate representative tasks with managers.\\\hline
+Hidden maintainability and testability requirements.
+& \scnref{MOD-1}, \scnref{MOD-2}, \scnref{TEST-1}, \scnref{TEST-2}
+& Use an intermediary; Encapsulate (P); Sandbox (P); Specialized interfaces (P)
+& Stable \CFE/catalog boundaries; controlled loss/crash tests and observable \Outbox, \CFE and subscriber state (P).\\\hline
+Hidden portability requirement.
+& \scnref{PORT-1}
+& Encapsulate (P); Adhere to standards; Configuration-time binding (P)
+& \IEP plus proposed platform adapters and deployment configuration for \StoreAgent and \DC services; target-platform validation remains required.\\\hline
+\end{tabularx}
+\endgroup
+
+We leave quantitative estimates to Section~\ref{sec:analysis-results}.
+Functional calculations remain component responsibilities: usability guidance does
+not itself calculate order quantities or report values. Delivery and availability
+claims depend on the recovery assumptions in Section~\ref{sec:approaches}.
