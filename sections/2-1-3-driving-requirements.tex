@@ -209,9 +209,9 @@ nice to have; risk H keeps the architect awake, M is concerning, and L is confid
 \textbf{Quality attribute} & \textbf{Refinement} & \textbf{Scenario} & \textbf{(V, R)}\\\hline
 Availability & Local operation during an outage & \scnref{AV-1} WAN loss at a store & (H, M)\\\cline{2-4}
  & Guaranteed delivery & \textbf{\scnref{AV-2} Lost store event} & \textbf{(H, H)}\\\cline{2-4}
- & DC-side recovery & \scnref{AV-3} Master inventory crash & (H, M)\\\hline
+ & \DC-side recovery & \scnref{AV-3} Master inventory crash & (H, M)\\\hline
 Performance & Per-store throughput & \scnref{PERF-1} One store at 100 events/s & (H, M)\\\cline{2-4}
- & Aggregate throughput at the DC & \textbf{\scnref{PERF-2} Ten stores at the \DC} & \textbf{(H, H)}\\\cline{2-4}
+ & Aggregate throughput at the \DC & \textbf{\scnref{PERF-2} Ten stores at the \DC} & \textbf{(H, H)}\\\cline{2-4}
  & Report latency under load & \scnref{PERF-3} Nested-family report under load & (M, M)\\\hline
 Security & Data access control & \scnref{SEC-1} Unauthorized database access & (H, L)\\\cline{2-4}
  & Channel confidentiality and integrity & \scnref{SEC-2} Intercepted store--\DC traffic & (H, M)\\\cline{2-4}
