@@ -18,11 +18,11 @@ rectangle "**Supermarket Inventory Tracking System**" as SYS {
 }
 
 POS --> ST : sales records
-SM --> ST : inventory queries
+SM --> ST : inventory queries,\nshipping orders
 ST --> DCB : inventory events\n[secure channel]
 DCB --> ERP : purchase and\nshipping orders
 ERP --> DCB : goods-receipt\nconfirmations
-DM --> DCB : queries, reports,\nshipping orders
+DM --> DCB : queries and reports
 
 legend bottom
   The outer box is our system boundary. Green is the store side; yellow is the
