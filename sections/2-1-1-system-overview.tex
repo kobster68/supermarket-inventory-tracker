@@ -2,4 +2,23 @@
 % Owner: Slice 1 (issue #2).
 \subsubsection{System Overview}
 \label{sec:system-overview}
-\todo{To be completed in Slice 1 (issue \#2): the general function and purpose of the system.}
+
+The system tracks the inventory of a regional supermarket chain. The chain has three
+stores and one distribution center (\DC) today, and it will grow to ten stores. The
+\DC ships product to the stores.
+
+Each store records its sales in real time. The point-of-sale (POS) system in the store
+sends each sale to the system, which turns it into an \InventoryEvent. A store emits up
+to 100 events per second. The store keeps its own copy of its inventory, the
+\StoreLocalInventory, so that store managers can read and change it when the network to
+the \DC is down.
+
+The \DC keeps the \CentralMasterInventory, the master record of the stock in every
+store and in the \DC. The store events reach the \DC through the \CFE, which also sends
+them to a variable number of other clients. From minimum stock quantities and current
+sales, the \DC makes shipping orders. It sends purchase and shipping orders to the
+external supplier/ERP system.
+
+Products belong to product families, and a family can contain other families to any
+depth. Managers ask for three types of report: the lowest-stock items, the overstocked
+items, and the total value of a product family.

@@ -2,4 +2,31 @@
 % Owner: Slice 1 (issue #2).
 \subsection{Stakeholder Representation}
 \label{sec:stakeholders}
-\todo{To be completed in Slice 1 (issue \#2): the stakeholder-and-concern matrix, with the store managers, the distribution-center managers, the operations team, and the variable set of subscribing clients as rows.}
+
+Table~\ref{tab:stakeholders} lists the stakeholders, their concerns, and the scenarios
+of Section~\ref{sec:driving-requirements} that record those concerns. The last three
+columns are the stakeholder-to-viewpoint summary: a mark shows a viewpoint that
+addresses the stakeholder's concerns. The Allocation viewpoint comes in the second
+draft.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.19\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.17\linewidth}|c|c|c|}
+\hline
+\textbf{Stakeholder} & \textbf{Concerns} & \textbf{Scenarios} & \textbf{Module} & \textbf{C\&C} & \textbf{Alloc.}\\\hline
+Store manager (user) & Store inventory always readable; easy shipping orders; access only to own store. & \scnref{AV-1}, \scnref{USE-1}, \scnref{SEC-3} & & x & \\\hline
+\DC manager (user) & Accurate master record; clear reports. & \scnref{AV-2}, \scnref{AV-3}, \scnref{PERF-3}, \scnref{USE-2} & & x & \\\hline
+Chain management (acquirer) & Growth to ten stores; protected inventory data. & \scnref{SCAL-1}, \scnref{SEC-1} & & x & x\\\hline
+Store systems operator & Recovery after an outage; failover time. & \scnref{AV-1}, \scnref{TEST-2}, \scnref{PORT-1} & & x & x\\\hline
+\DC operator & Throughput and recovery at the \DC; secure channel. & \scnref{AV-3}, \scnref{PERF-2}, \scnref{SEC-2} & & x & x\\\hline
+Client developers & Subscribe over the \IEP; add client types. & \scnref{MOD-1}, \scnref{SCAL-2}, \scnref{INT-2} & x & x & \\\hline
+Supplier integrator & The information exchanged with external systems. & \scnref{INT-1} & x & x & \\\hline
+Developers & Element responsibilities, interfaces, testability. & \scnref{MOD-1}, \scnref{MOD-2}, \scnref{TEST-1} & x & x & \\\hline
+Maintainers & Effect of a change; platform moves. & \scnref{MOD-2}, \scnref{PORT-1}, \scnref{TEST-2} & x & & x\\\hline
+Course instructor (evaluator) & Complete, traceable document; measurable scenarios. & All & x & x & x\\\hline
+\end{tabularx}
+\caption{Stakeholders, concerns, and the viewpoints that address them.}
+\label{tab:stakeholders}
+\end{table}

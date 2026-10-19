@@ -4,16 +4,35 @@
 \subsubsection{Significant Driving Requirements}
 \label{sec:driving-requirements}
 
+\paragraph{Functional requirements.}
+The brief asks the system to:
+\begin{enumerate}[label=FR-\arabic*,nosep,leftmargin=3.2em]
+  \item record sales in real time and keep a local inventory in each store, plus a
+  master inventory that covers all store and \DC stock;
+  \item make shipping orders from minimum stock quantities and current sales;
+  \item provide a front-end and an exchange protocol that send alerts to the central
+  inventory, to store tracking, and to a variable number of other clients;
+  \item support product families nested to any depth;
+  \item give managers lowest-stock, overstocked-item and product-family total-value
+  reports;
+  \item connect to external subsystems with the exchanged information defined.
+\end{enumerate}
+
+\paragraph{Quality-attribute requirements.}
 The quality-attribute requirements that drive the architecture are recorded as
-six-part scenarios. Each scenario has a frozen identifier; the full set of
-identifiers and their one-line titles is listed below, and Slice~1 writes the body of
-each scenario under its identifier.
+six-part scenarios (Hawker, ``Quality Attributes, Quality Scenarios, and Design
+Tactics,'' slides 8--9). Each scenario has a frozen identifier; the full set of
+identifiers and their one-line titles is listed below. The brief states
+availability, performance, scalability, security and usability. We found the hidden
+requirements for modifiability, integrability, testability and portability in its
+variable clients, nested families and external systems. Where the brief gives no
+number, the response measure is our own target, which we will confirm with the
+stakeholders.
 
 \scenariotable
 
-As a worked example and a template for the rest, the availability scenario
-\scnref{AV-1} is given in full.
-
+\begingroup
+\small
 \qascenario{AV-1}
   {The wide-area network between a store and the \DC (external physical infrastructure).}
   {An omission fault: the store loses its network link to the \DC.}
@@ -22,4 +41,197 @@ As a worked example and a template for the rest, the availability scenario
   {The \StoreAgent keeps serving reads and updates against the \StoreLocalInventory, logs the fault, and appends each outbound \InventoryEvent to the durable \Outbox for delivery when the link returns.}
   {The \StoreLocalInventory stays readable and updatable at least 99\% of the time; this single outage lasts no more than 30 minutes; no buffered event is lost on reconnect.}
 
-\todo{To be completed in Slice 1 (issue \#2): restate every functional and quality requirement from the brief, and write a six-part scenario for each remaining identifier above using the brief's numbers.}
+\qascenario{AV-2}
+  {The WAN or the \CFE (transient fault).}
+  {An \InventoryEvent or its \Acknowledgement is lost between the \Outbox and the \CFE.}
+  {The \Outbox, the \IEP connector and the \CFE.}
+  {Normal operation, 3 to 10 stores at full rate.}
+  {The \Outbox keeps the event and sends it again with its original ID until the \CFE acknowledges it. The \CFE and the \CentralMasterInventory discard duplicates by event ID and sequence.}
+  {100\% of store events reach the \DC; 0 events lost; 0 events applied twice.}
+
+\qascenario{AV-3}
+  {An internal software fault at the \DC.}
+  {The \CentralMasterInventory process crashes.}
+  {The \CentralMasterInventory and its database.}
+  {Normal operation; stores keep publishing.}
+  {The \CFE keeps accepting and storing events. The process restarts, runs \opSubscribe, and runs \opReplay from its last applied sequence.}
+  {0 events lost; the master record is current again within 30 minutes; store operation stops for 0 seconds.}
+
+\qascenario{PERF-1}
+  {The POS system of one store.}
+  {Sales and stock events arrive at 100 events/s for a sustained period.}
+  {The \POSAdapter, the \StoreAgent, the \StoreLocalInventory and the \Outbox.}
+  {Normal operation, peak trading.}
+  {The \StoreAgent applies each event locally and appends it to the \Outbox.}
+  {100 events/s sustained; each event is in the \StoreLocalInventory within 1 s; the \Outbox backlog does not grow.}
+
+\qascenario{PERF-2}
+  {The \StoreAgent{}s of ten stores.}
+  {All stores publish at full rate: 1{,}000 events/s at the \DC.}
+  {The \CFE, its event store and its subscribers.}
+  {Maximum scale: ten stores and one \DC.}
+  {The \CFE persists each event, acknowledges it, and publishes it to every subscriber.}
+  {1{,}000 events/s sustained; each event acknowledged within 1 s; no queue at the \DC grows.}
+
+\qascenario{PERF-3}
+  {A \DC manager.}
+  {Asks for the total value of a product family with nested sub-families.}
+  {The \ReportingClient and the \CentralMasterInventory.}
+  {1{,}000 events/s arrive at the \DC.}
+  {The \ReportingClient goes through the family tree and returns the report.}
+  {The report returns within 10 s; the \CFE still sustains 1{,}000 events/s.}
+
+\qascenario{SEC-1}
+  {An unauthenticated person or process, inside or outside the network.}
+  {Tries to read or change a store or master inventory database.}
+  {The \StoreLocalInventory, the master inventory database and their access paths.}
+  {Normal operation.}
+  {The system rejects all access without the credentials of an authorized manager or agent, and logs the attempt.}
+  {100\% of attempts rejected and logged; 0 records read or changed.}
+
+\qascenario{SEC-2}
+  {An attacker on the WAN.}
+  {Captures or changes \IEP messages between a store and the \DC.}
+  {The channel between the \Outbox and the \CFE.}
+  {Normal operation.}
+  {TLS encrypts each message and checks its integrity. The \CFE rejects a changed message and does not acknowledge it, so the \Outbox sends it again.}
+  {0 events readable by the attacker; 100\% of changed messages rejected; 0 changed events applied.}
+
+\qascenario{SEC-3}
+  {An authenticated store manager.}
+  {Tries to read or change the inventory of a different store.}
+  {The access control of the \StoreAgent and the \CentralMasterInventory.}
+  {Normal operation.}
+  {The system denies the request and logs it.}
+  {100\% of out-of-scope requests denied and logged; 0 records changed.}
+
+\qascenario{SCAL-1}
+  {Chain management.}
+  {The chain adds stores, from three to ten.}
+  {The \StoreAgent deployment and the \CFE.}
+  {Normal operation; stores are added one at a time.}
+  {We deploy one configured \StoreAgent for each new store. It publishes to the \CFE like the existing stores.}
+  {0 code changes to the \CFE or the subscribers; \scnref{PERF-2} still holds at ten stores.}
+
+\qascenario{SCAL-2}
+  {A client developer.}
+  {A new alerting client subscribes to the \CFE at runtime.}
+  {The \CFE.}
+  {Normal operation at full load.}
+  {The \CFE registers the subscription and sends the client each new event on its topics.}
+  {0 \CFE restarts; 0 events lost to the existing subscribers; the client receives the next published event.}
+
+\qascenario{USE-1}
+  {A store manager who is new to the system.}
+  {Wants to produce a shipping order.}
+  {\ShippingOrderGen and its manager screen.}
+  {Normal operation.}
+  {The system proposes an order from minimum stock quantities and sales. The manager checks it and confirms it.}
+  {After at most 1 hour of training, 9 of 10 managers complete an order without help in less than 5 minutes.}
+
+\qascenario{USE-2}
+  {A \DC manager who is new to the system.}
+  {Reads the lowest-stock, overstocked-item and family-value reports.}
+  {The \ReportingClient.}
+  {Normal operation.}
+  {Each report shows its type, scope and units with the data.}
+  {After at most 1 hour of training, managers answer 9 of 10 questions about the reports correctly.}
+
+\qascenario{MOD-1}
+  {A developer.}
+  {Adds a new client type that receives \InventoryEvent alerts.}
+  {The new client, the \IEP and the \CFE.}
+  {Design time.}
+  {The developer writes the client against the \IEP and subscribes it to the \CFE.}
+  {0 changed modules outside the new client; done in at most 5 person-days.}
+
+\qascenario{MOD-2}
+  {A \DC manager or a developer.}
+  {The product-family hierarchy gains one more nesting level.}
+  {The product-family model and the \ReportingClient.}
+  {Runtime, as a data change.}
+  {The recursive family model accepts the new level as data; the reports include it.}
+  {0 code changes; 100\% of family-value reports correct for the new level.}
+
+\qascenario{INT-1}
+  {A supplier integrator.}
+  {Connects an external system, for example a new supplier/ERP system, over the \IEP.}
+  {The \SupplierGateway and the \IEP.}
+  {Development time.}
+  {The integrator writes an adapter that maps the external format to \IEP messages.}
+  {Changes stay in one boundary element; done in at most 10 person-days.}
+
+\qascenario{INT-2}
+  {Client developers.}
+  {Add a variable number of alerting clients through the \CFE.}
+  {The \CFE and its fan-out.}
+  {Normal operation at full load.}
+  {Each client subscribes over the \IEP; the \CFE sends events to all of them.}
+  {With up to 10 subscribers, \scnref{PERF-2} still holds; 0 \CFE code changes.}
+
+\qascenario{TEST-1}
+  {A tester.}
+  {Drops 10\% of the \IEP messages and acknowledgements during a load test.}
+  {The \Outbox, the \CFE and the \CentralMasterInventory.}
+  {Test environment, 100 events/s per store.}
+  {The test harness controls the loss and compares the sent events with the applied events by ID and sequence.}
+  {The test finds 100\% of lost or duplicate events; one test run takes at most 1 hour.}
+
+\qascenario{TEST-2}
+  {A tester.}
+  {Stops a \StoreAgent or cuts the WAN to measure detection and failover.}
+  {The \StoreAgent and its supervision.}
+  {Test environment.}
+  {The harness records the time of the failure, the detection and the restored access.}
+  {Recovery time measured to within 1 s; the test shows an outage of at most 30 minutes.}
+
+\qascenario{PORT-1}
+  {An operator or a developer.}
+  {Moves a store or \DC node to a different operating system or hardware.}
+  {The \StoreAgent or the \DC services.}
+  {Maintenance window.}
+  {We rebuild the node with a platform adapter and new configuration; the \IEP does not change.}
+  {0 changes to the \IEP or other nodes; done in at most 5 person-days; all \texttt{AV} and \texttt{PERF} scenarios still pass.}
+\endgroup
+
+\paragraph{Utility tree.}
+Table~\ref{tab:utility-tree} is our draft utility tree, in the tabular form of
+Bass, Clements, and Kazman, Table 19.1 (284--286; Hawker, ``Utility Trees,'' slides 2,
+3 and 6). Each scenario has a rating of (business value, technical risk) on the
+book's scale: value H is must-have, M is important but not fatal if omitted, and L is
+nice to have; risk H keeps the architect awake, M is concerning, and L is confident.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{|l|l|X|c|}
+\hline
+\textbf{Quality attribute} & \textbf{Refinement} & \textbf{Scenario} & \textbf{(V, R)}\\\hline
+Availability & Local operation during an outage & \scnref{AV-1} WAN loss at a store & (H, M)\\\cline{2-4}
+ & Guaranteed delivery & \textbf{\scnref{AV-2} Lost store event} & \textbf{(H, H)}\\\cline{2-4}
+ & DC-side recovery & \scnref{AV-3} Master inventory crash & (H, M)\\\hline
+Performance & Per-store throughput & \scnref{PERF-1} One store at 100 events/s & (H, M)\\\cline{2-4}
+ & Aggregate throughput at the DC & \textbf{\scnref{PERF-2} Ten stores at the \DC} & \textbf{(H, H)}\\\cline{2-4}
+ & Report latency under load & \scnref{PERF-3} Nested-family report under load & (M, M)\\\hline
+Security & Data access control & \scnref{SEC-1} Unauthorized database access & (H, L)\\\cline{2-4}
+ & Channel confidentiality and integrity & \scnref{SEC-2} Intercepted store--\DC traffic & (H, M)\\\cline{2-4}
+ & Authorization scope & \scnref{SEC-3} Manager out of scope & (M, L)\\\hline
+Scalability & Store growth & \scnref{SCAL-1} Three to ten stores & (H, M)\\\cline{2-4}
+ & Client growth & \scnref{SCAL-2} Client subscribes at runtime & (M, L)\\\hline
+Usability & Training effort for orders & \scnref{USE-1} Shipping order, minimal training & (H, L)\\\cline{2-4}
+ & Training effort for reports & \scnref{USE-2} Three report types & (H, L)\\\hline
+Modifiability & New client type & \scnref{MOD-1} New client type & (M, L)\\\cline{2-4}
+ & Product-family structure & \scnref{MOD-2} Extra nesting level & (M, M)\\\hline
+Integrability & External systems & \scnref{INT-1} External system over the \IEP & (M, M)\\\cline{2-4}
+ & Alerting clients & \scnref{INT-2} Variable alerting clients & (M, L)\\\hline
+Testability & Delivery under loss & \scnref{TEST-1} Delivery under message loss & (M, M)\\\cline{2-4}
+ & Failover timing & \scnref{TEST-2} Failover timing & (M, M)\\\hline
+Portability & Node platform change & \scnref{PORT-1} Node moved to another platform & (L, M)\\\hline
+\end{tabularx}
+\caption{Draft utility tree: (business value, technical risk).}
+\label{tab:utility-tree}
+\end{table}
+
+The (H, H) scenarios are \scnref{AV-2} and \scnref{PERF-2}. Both are on the
+store-to-\DC delivery path, so that path is the vertical slice of this draft. The tree
+focuses our design effort and is an input to the later ATAM.

@@ -1,0 +1,32 @@
+@startuml
+' System-level context diagram for section 2.1.2.
+' Authored in Slice 1. Renders through scripts/render-diagrams.sh.
+!include style.puml
+title Context diagram: the system and its environment
+
+left to right direction
+skinparam componentStyle rectangle
+
+actor "Store\nmanager" as SM
+actor "DC\nmanager" as DM
+node "External\nPOS system\n(one per store)" as POS #dae8fc
+node "External\nsupplier/ERP\nsystem" as ERP #dae8fc
+
+rectangle "**Supermarket Inventory Tracking System**" as SYS {
+  rectangle "Store\n(3 today, up to 10)" as ST #d5e8d4
+  rectangle "Distribution center" as DCB #fff2cc
+}
+
+POS --> ST : sales records
+SM --> ST : inventory queries
+ST --> DCB : inventory events\n[secure channel]
+DCB --> ERP : purchase and\nshipping orders
+ERP --> DCB : goods-receipt\nconfirmations
+DM --> DCB : queries, reports,\nshipping orders
+
+legend bottom
+  The outer box is our system boundary. Green is the store side; yellow is the
+  distribution center. Blue nodes are external systems; stick figures are human
+  roles. Arrows show the information that crosses each connection.
+endlegend
+@enduml
