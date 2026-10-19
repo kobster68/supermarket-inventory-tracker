@@ -4,27 +4,18 @@
 % The SEI template places Interfaces within the view packet's Element Catalog.
 % It prescribes no further internal interface outline;
 % the subheadings below organize the interface details required by issue #4.
-% Scope text layout to this interface; preserve the document's running page style.
+% Emergency stretch is scoped to this interface; the page style is the document's.
 \begingroup
-\fancypagestyle{iep}{%
-  \fancyhf{}%
-  \fancyhead[L]{\small Software Architecture Document}%
-  \fancyhead[R]{\small Supermarket Inventory Tracking System}%
-  \fancyfoot[C]{\small\thepage}%
-  \renewcommand{\headrulewidth}{0.4pt}%
-}
-\pagestyle{iep}
 \setlength{\emergencystretch}{2em}
-\setlength{\parskip}{3pt plus 1pt}
 \paragraph{\IEP interface specification.}
 \label{sec:iep}
 \subparagraph{Identity, purpose, and provided/required sides.}
 We define version 1.0 of the \IEP to connect store and \DC publishers
 to runtime subscribers through the \CFE.
-The provided side comprises the six operations below. The required side comprises
-durable storage, a subscriber registry, secure channels, a product catalog and clocks;
-publishers retain unacknowledged events and subscribers process them idempotently
-(Bass, Clements, and Kazman 230).
+The provided side comprises the six operations below; the required side comprises
+durable storage, a subscriber registry, secure channels, a product catalog and clocks
+(Bass, Clements, and Kazman 230). Publishers retain unacknowledged events and
+subscribers process them idempotently.
 
 \subparagraph{Data types and topic naming.}
 We use case-sensitive fields and nonempty identifiers compared exactly;
@@ -76,7 +67,7 @@ identical retries create no extra entry.
 \texttt{UNKNOWN\_PRODUCT}. Rejection never advances the source position.
 \item[\opAck\texttt{(acknowledgement)}]
 \emph{Pre/meaning:} Broker response confirming durable acceptance.
-\emph{Post:} The \Outbox saves the maximum of its position and
+\emph{Post:} The publisher (the store's \Outbox, or the \DCAgent for its own source) saves the maximum of its position and
 \texttt{acceptedThrough} before pruning; subscriber cursors are unchanged.
 \emph{Errors:} Reject malformed/mismatched or unauthenticated confirmations as
 \texttt{INVALID} or \texttt{UNAUTHORIZED} without pruning; lost responses cause retries.
@@ -93,7 +84,7 @@ Owner retries succeed while removal records exist; logs remain unchanged.
 \emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIPTION} without active/removal record.
 \item[\opReplay\texttt{(role, source, afterSequence, subscriptionId?, events?)}]
 \emph{Pre/meaning:} Nonnegative exclusive cursor. For \texttt{publisher}, send
-ordered retained events after the \Outbox position; for \texttt{subscriber},
+ordered retained events after the publisher's saved position; for \texttt{subscriber},
 identify an owned active subscription, omit events and use its durable cursor.
 \emph{Post:} Publisher events follow \opPublish individually; partial failure
 identifies the first failed event. \Subscriber replay returns matching events in
@@ -125,7 +116,7 @@ append commit atomically. We preserve order per source, not globally; subscriber
 atomically save changes, deduplication and processing cursors. Identity records
 survive restarts throughout retry/replay history; unverifiable old events require recovery.
 
-We keep the \Outbox as owner of the publisher's acknowledged position, saved before
+Each publisher owns its acknowledged position (the \Outbox for a store, the \DCAgent for the \DC), saved before
 pruning. Clients subscribe before receiving and recover using separate subscriber
 cursors. Transient errors are retried unchanged with capped exponential backoff/jitter,
 respecting \texttt{retryAfterMs}; unacknowledged events are never discarded.
@@ -154,8 +145,8 @@ all copies is unrecoverable. We leave system sizing to Section~\ref{sec:analysis
 The \CFE requires storage that atomically commits events, identities and positions before
 \opAck and supports consistent backup/restore. The durable registry retains owners,
 filters and start/removal records; subscribers retain atomic checkpoints. The environment
-supplies catalog routing, encrypted integrity-protected channels with mutual authentication
-(including local clients), credentials, revocation and source/topic permissions.
+supplies catalog routing, TLS on the store--\DC legs, peer authentication of publishers
+and subscribers (mechanism still open), credentials, revocation and source/topic permissions.
 We restrict database access; read access and wildcards grant no extra publishing scope.
 UTC timestamps and monotonic timeout clocks keep recovery independent of clock adjustments.
 
@@ -181,7 +172,8 @@ before pruning. \Subscriber recovery uses its own cursor/subscription ID without
 event batch; \opResync reconciles missing history. Identical retries are deduplicated.
 
 \subparagraph{Interface scenario coverage.}
-\scnref{AV-1}, \scnref{AV-2}: buffering, \opPublish, \opAck, publisher \opReplay;
+\begin{sloppypar}
+We map the scenarios as follows. \scnref{AV-1}, \scnref{AV-2}: buffering, \opPublish, \opAck, publisher \opReplay;
 \scnref{AV-3}: subscriber \opReplay, \opResync, atomic cursors.
 \scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}: capacity/backpressure;
 \scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-2}: runtime
@@ -193,5 +185,5 @@ event batch; \opResync reconciles missing history. Identical retries are dedupli
 \scnref{PORT-1}: portable contracts/state and agreed wire binding.
 \scnref{PERF-3}, \scnref{USE-1}, \scnref{USE-2} concern reporting/UI outcomes,
 not protocol guarantees. We record system coverage in Section~\ref{sec:requirements-coverage}.
-\par
+\end{sloppypar}
 \endgroup
