@@ -2,4 +2,38 @@
 % Owner: Slice 1 (issue #2).
 \subsubsection{Goals and Context}
 \label{sec:goals-context}
-\todo{To be completed in Slice 1 (issue \#2): the goals and context, including the context diagram (system boundary, stores, the \DC, the POS system and the supplier/ERP system as external systems, and the manager roles) and a table of the information exchanged with each external system.}
+
+The system has four goals:
+\begin{itemize}[nosep]
+  \item keep the store inventory available to the store, even when the network to the
+  \DC fails;
+  \item keep one accurate master record of all stock, with no lost store event;
+  \item make shipping orders and reports that managers understand with minimal
+  training;
+  \item let the chain add stores and clients without a change to the existing parts.
+\end{itemize}
+
+Figure~\ref{fig:context} shows the system boundary. Inside it are the stores and the
+\DC. Outside it are the two external systems, the POS system in each store and the
+supplier/ERP system, and the store and \DC managers. Table~\ref{tab:external-exchange}
+lists the information that we exchange with each external system.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.86\linewidth,height=0.30\textheight,keepaspectratio]{context}
+\caption{Components and Connectors view type: system context diagram.}
+\label{fig:context}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.17\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.22\linewidth}|}
+\hline
+\textbf{External system} & \textbf{Comes in} & \textbf{Goes out} & \textbf{How often}\\\hline
+POS system (one per store) & Sales records, through the \POSAdapter. & Nothing. & Each sale; up to 100 events/s per store.\\\hline
+Supplier/ERP system & Goods-receipt confirmations, through the \SupplierGateway. & Purchase and shipping orders from \ShippingOrderGen. & Each order and each delivery.\\\hline
+\end{tabularx}
+\caption{Information exchanged with each external system.}
+\label{tab:external-exchange}
+\end{table}
