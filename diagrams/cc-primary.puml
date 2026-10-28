@@ -28,7 +28,7 @@ rectangle "Distribution Center" as DCB {
   component "DC Agent" as DCA #fff2cc
   component "Central Master\nInventory" as CMI #fff2cc
   database "Master\ninventory DB" as CMIDB #e1d5e7
-  component "Shipping-Order\nGeneration" as SOG #fff2cc
+  component "Shipping-Order\nFulfillment" as SOG #fff2cc
   component "Supplier Gateway" as SG #dae8fc
   component "Store-Tracking\nClient" as STC #fff2cc
   component "Reporting Client" as RC #fff2cc

@@ -72,7 +72,7 @@ The view has two variation points, both exercised at run time.
 Figure~\ref{fig:cc-primary} is the primary presentation. The store boundary holds the
 \POSAdapter, the \StoreAgent, the \StoreLocalInventory and the \Outbox; the external POS
 system sits outside it. The \DC boundary holds the \CFE and its event store, the
-\DCAgent, the \CentralMasterInventory and its database, \ShippingOrderGen, the
+\DCAgent, the \CentralMasterInventory and its database, \ShippingOrderFulfillment, the
 \SupplierGateway, a \StoreTrackingClient and a \ReportingClient; the external
 supplier/ERP system sits outside it. The store and \DC managers appear as actors who
 query the system. The connectors and the notation are read from the figure's key.
@@ -111,7 +111,7 @@ component box in the figure has a row and every row is a box.
 \CFE & Pub-sub broker: persists each event, acknowledges it to the publishing \Outbox, publishes by topic to every subscriber. & \DC & Yes (event store) & 100\% delivery (\scnref{AV-2}); \mbox{1{,}000} events/s (\scnref{PERF-2})\\\hline
 \DCAgent & Publishes the \DC's own events through the \CFE. & \DC & None & Master covers \DC stock\\\hline
 \CentralMasterInventory & Authoritative record of all store and \DC stock, built from every event. After a crash it catches up by running \opSubscribe to the \CFE and \opReplay from the CFE event store at its last applied sequence. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
-\ShippingOrderGen & Computes shipping orders and sends them via the \SupplierGateway. & \DC & None & Report usability (\scnref{USE-1})\\\hline
+\ShippingOrderFulfillment & Computes shipping orders and sends them via the \SupplierGateway. & \DC & None & Report usability (\scnref{USE-1})\\\hline
 \SupplierGateway & Exchanges orders and receipts with the external supplier/ERP system. & \DC (boundary) & None & Integration (\scnref{INT-1})\\\hline
 \StoreTrackingClient & Subscriber; shows a store's inventory and answers the \DC manager's store-status queries. & \DC & None & Variable client (\scnref{SCAL-2}, \scnref{INT-2})\\\hline
 \ReportingClient & Subscriber; answers the \DC manager's report queries. & \DC & None & Report load (\scnref{PERF-3}, \scnref{USE-2})\\\hline
@@ -145,14 +145,14 @@ the view, and both run over a secure channel (\scnref{SEC-2}); the figure marks 
 \begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.12\linewidth}|>{\raggedright\arraybackslash}p{0.11\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.12\linewidth}|>{\raggedright\arraybackslash}p{0.06\linewidth}|>{\raggedright\arraybackslash}p{0.15\linewidth}|}
 \hline
 \textbf{Connector} & \textbf{Type} & \textbf{Endpoints} & \textbf{Protocol} & \textbf{Secure} & \textbf{Delivery semantics}\\\hline
-\IEP bus & pub-sub (n-ary) & Publishers: store \Outbox{}es ($\times$N), \DCAgent; broker: \CFE; subscribers: \CentralMasterInventory, \ShippingOrderGen, \StoreTrackingClient, \ReportingClient & \IEP over TLS on the store-to-\DC legs & Yes (store--\DC) & At-least-once, ordered per source, idempotent by event ID; acknowledged to the publishing \Outbox, then replayable\\\hline
-Master-inventory query & request/ reply & \ReportingClient, \StoreTrackingClient and \ShippingOrderGen to the \CentralMasterInventory & Internal query API & In \DC & Synchronous, read-only\\\hline
+\IEP bus & pub-sub (n-ary) & Publishers: store \Outbox{}es ($\times$N), \DCAgent; broker: \CFE; subscribers: \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient & \IEP over TLS on the store-to-\DC legs & Yes (store--\DC) & At-least-once, ordered per source, idempotent by event ID; acknowledged to the publishing \Outbox, then replayable\\\hline
+Master-inventory query & request/ reply & \ReportingClient, \StoreTrackingClient and \ShippingOrderFulfillment to the \CentralMasterInventory & Internal query API & In \DC & Synchronous, read-only\\\hline
 Manager query & request/ reply & Store manager to the \StoreAgent; \DC manager to the \ReportingClient and \StoreTrackingClient & Internal query API & In store, in \DC & Synchronous, read-only\\\hline
 POS feed & request/ reply & External POS system to the \POSAdapter & External POS protocol (to be confirmed with the external system owner) & Per owner & Request/reply; the adapter converts replies into \InventoryEvent{}s\\\hline
 Supplier exchange & request/ reply & \SupplierGateway to the external supplier/ERP system & External supplier/ERP protocol (to be confirmed) & Per owner & Orders out; goods-receipt confirmations back\\\hline
 Store-side store access & data access & \StoreAgent to the \StoreLocalInventory and to the \Outbox & Local & N/A & Durable, ordered append; local read and update\\\hline
 \DC-side store access & data access & \CFE to its event store; \CentralMasterInventory to its database & Local & N/A & Durable persistence\\\hline
-Boundary hand-off & local call & \POSAdapter to the \StoreAgent; \ShippingOrderGen to the \SupplierGateway & In-process & N/A & In-process call between a component and its boundary element\\\hline
+Boundary hand-off & local call & \POSAdapter to the \StoreAgent; \ShippingOrderFulfillment to the \SupplierGateway & In-process & N/A & In-process call between a component and its boundary element\\\hline
 \end{tabularx}
 \caption{Element catalog --- connectors of the Components and Connectors view.}
 \label{tab:cc-connectors}

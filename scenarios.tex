@@ -26,19 +26,19 @@
     \scenarioid{PERF-1} & One store sustains its full event rate (100 events/s)\\\hline
     \scenarioid{PERF-2} & All ten stores at full rate reach the \DC (1,000 events/s)\\\hline
     \scenarioid{PERF-3} & A manager report aggregates nested product families under load\\\hline
+    \scenarioid{PERF-4} & A store drains its outage backlog while live sales continue\\\hline
     \scenarioid{SEC-1}  & An unauthorized actor tries to read or modify an inventory database\\\hline
     \scenarioid{SEC-2}  & An attacker intercepts store--\DC communication\\\hline
     \scenarioid{SEC-3}  & A manager acts outside their authorized scope\\\hline
     \scenarioid{SCAL-1} & The chain grows from three stores to ten\\\hline
     \scenarioid{SCAL-2} & A new alerting client subscribes to the \CFE at runtime\\\hline
-    \scenarioid{USE-1}  & A store manager produces a shipping order with minimal training\\\hline
+    \scenarioid{USE-1}  & A store manager confirms a store-raised shipping order with minimal training\\\hline
     \scenarioid{USE-2}  & A \DC manager interprets the three report types\\\hline
     \scenarioid{MOD-1}  & A new client type is added to receive \InventoryEvent alerts\\\hline
     \scenarioid{MOD-2}  & The product-family hierarchy gains a nesting level\\\hline
-    \scenarioid{INT-1}  & An external system is integrated over the \IEP\\\hline
+    \scenarioid{INT-1}  & An external analytics client is integrated over the \IEP\\\hline
     \scenarioid{INT-2}  & A variable number of alerting clients are added through the \CFE\\\hline
     \scenarioid{TEST-1} & The guaranteed-delivery path is verified under message loss\\\hline
     \scenarioid{TEST-2} & Availability detection and failover timing are verified\\\hline
-    \scenarioid{PORT-1} & A store or \DC node is moved to a different platform\\\hline
   \end{tabular}\par\medskip
 }

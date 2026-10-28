@@ -32,7 +32,7 @@ lists the information that we exchange with each external system.
 \hline
 \textbf{External system} & \textbf{Comes in} & \textbf{Goes out} & \textbf{How often}\\\hline
 POS system (one per store) & Sales records, through the \POSAdapter. & Nothing. & Each sale; up to 100 events/s per store.\\\hline
-Supplier/ERP system & Goods-receipt confirmations, through the \SupplierGateway. & Purchase and shipping orders from \ShippingOrderGen. & Each order and each delivery.\\\hline
+Supplier/ERP system & Goods-receipt confirmations, through the \SupplierGateway. & Purchase and shipping orders from \ShippingOrderFulfillment. & Each order and each delivery.\\\hline
 \end{tabularx}
 \caption{Information exchanged with each external system.}
 \label{tab:external-exchange}

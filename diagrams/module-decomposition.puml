@@ -31,7 +31,7 @@ package "Communications Front-End" as CFE #fff2cc {
 package "Distribution Center Subsystem" as DC #fff2cc {
   rectangle "DC Agent"
   rectangle "Central Master\nInventory"
-  rectangle "Shipping-Order\nGeneration"
+  rectangle "Shipping-Order\nFulfillment"
   rectangle "Supplier Gateway"
   rectangle "Store-Tracking\nClient"
   rectangle "Reporting Client"
