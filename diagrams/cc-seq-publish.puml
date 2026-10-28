@@ -1,38 +1,44 @@
 @startuml
-' Behavior 1: normal publish -> acknowledge -> fan-out.
+' Behavior 1 (Figure 4): normal publish -> acknowledge -> fan-out -> subscriber cursor.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 !include style.puml
 title Components-and-Connectors view: behavior, publish, acknowledge, fan-out
 
 skinparam sequenceMessageAlign center
-skinparam maxMessageSize 220
+skinparam maxMessageSize 230
 
-participant "POS system" as POS #dae8fc
-participant "POS Adapter" as POSAD #dae8fc
-participant "Store Agent" as SA #d5e8d4
-database "Store-Local\nInventory" as SLI #e1d5e7
-queue "Outbox" as OB #e1d5e7
-participant "Communications\nFront-End" as CFE #fff2cc
-database "CFE event store" as CFEDB #e1d5e7
-participant "Subscribers\n(CMI, Shipping-Order Fulfillment,\nStore-Tracking, Reporting)" as SUB #fff2cc
+participant "POS system" as POS #6FA8DC
+participant "POS Adapter" as POSAD #6FA8DC
+participant "Store Agent" as SA #93C47D
+database "Store-Local\nInventory" as SLI #8E7CC3
+queue "Outbox" as OB #8E7CC3
+participant "Communications\nFront-End" as CFE #F1C232
+database "CFE event store" as CFEDB #8E7CC3
+participant "Subscribers\n(CMI, Shipping-Order Fulfillment,\nStore-Tracking, Reporting, Analytics)" as SUB #F1C232
 
-POS -> POSAD : sales record
+POS -> POSAD : sales record (event stream)
 POSAD -> SA : Inventory Event
 group one local step
   SA -> SLI : apply (update stock)
   SA -> OB : append (durable, ordered)
 end
-OB -> CFE : publish (Inventory Event)\nIEP over TLS [secure]
-CFE -> CFEDB : persist
-CFE --> OB : acknowledge (sequence no.)\nIEP over TLS [secure]
-note over OB : holds the last acknowledged\nsequence; acknowledged events\nmay be pruned
-CFE -> SUB : notify by topic (source, product family)
+OB -> CFE : publish (Inventory Event)\nIEP / TLS 1.3 mutual certs [secure]
+CFE -> CFEDB : persist (retain for replay)
+CFE --> OB : acknowledge (acceptedThrough sequence)\n[secure]
+note over OB : holds the last acknowledged\nsequence; acknowledged events\nmay then be pruned
+CFE -> SUB : notify (every subscriber receives\nevery event and filters locally)
+SUB --> CFE : acknowledge (applied through\nsequence N per source)
+note over CFE, CFEDB : the CFE keeps a per-subscription delivered position; the event\nstore retains each accepted event until every subscription has\nacknowledged past it plus a retention window
 note over SUB : idempotent by event ID;\nduplicates are ignored
+
+note over SA, CFE : A store-raised Shipping Order travels as a second message type on\nthe same connector: the Store Agent raises it when a product reaches its\nminimum, the store manager confirms it, and it is published, acknowledged\nand fanned out exactly as above; Shipping-Order Fulfillment receives it and\nthe DC Agent publishes the DC-side stock event when the goods ship.
 
 legend right
   Normal path. The store never blocks on the WAN:
   the local step completes first, then the Outbox
   publishes. At-least-once delivery, acknowledged
-  per source sequence number.
+  per source sequence; subscribers acknowledge a
+  cumulative cursor so the event store knows what
+  it may release.
 endlegend
 @enduml

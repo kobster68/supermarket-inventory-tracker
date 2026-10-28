@@ -9,20 +9,29 @@ skinparam backgroundColor white
 skinparam shadowing false
 skinparam defaultFontName Serif
 skinparam defaultFontSize 12
-skinparam ArrowColor #334155
-skinparam ArrowFontColor #334155
-skinparam ComponentBorderColor #475569
-skinparam ComponentBackgroundColor #f8fafc
-skinparam InterfaceBorderColor #475569
-skinparam DatabaseBorderColor #475569
-skinparam QueueBorderColor #475569
-skinparam NodeBorderColor #475569
-skinparam NoteBorderColor #64748b
-skinparam NoteBackgroundColor #f8fafc
+' Connector colour: a dark navy that prints solid and reads as the darkest ink on
+' the page, so the connectors stand out from every (lighter) element fill and stay
+' distinct in grayscale.
+skinparam ArrowColor #1C3F6E
+skinparam ArrowFontColor #15243B
+skinparam ComponentBorderColor #203864
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam InterfaceBorderColor #1C3F6E
+skinparam InterfaceBackgroundColor #FFFFFF
+skinparam DatabaseBorderColor #203864
+skinparam QueueBorderColor #203864
+skinparam NodeBorderColor #203864
+skinparam RectangleBorderColor #203864
+' Annotations (notes): a warm neutral fill with a brown border, so a note is a
+' different ink from every coloured element and from the connectors in grayscale.
+skinparam NoteBorderColor #7F6000
+skinparam NoteBackgroundColor #FFF3D6
 
-' Shared colour vocabulary. Use these exact fills so the same kind of element
-' reads the same way in every view:
-'   #dae8fc  external system / boundary element
-'   #d5e8d4  store-side runtime element
-'   #fff2cc  distribution-center runtime element
-'   #e1d5e7  persistent store
+' Shared, saturated, print-safe colour vocabulary. Use these exact fills so the same
+' kind of element reads the same way in every view. The four fills were chosen so that
+' they separate in grayscale as well as in colour (listed here darkest to lightest):
+'   #8E7CC3  persistent store (queue / database)            gray ~ 0.54
+'   #6FA8DC  external system / boundary element (blue)      gray ~ 0.62
+'   #93C47D  store-side runtime element (green)             gray ~ 0.68
+'   #F1C232  distribution-center runtime element (gold)     gray ~ 0.75
+' Connectors are the dark navy #1C3F6E; note annotations are the warm #FFF3D6.

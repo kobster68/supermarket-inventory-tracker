@@ -31,16 +31,17 @@ security and modifiability scenarios of Section~\ref{sec:driving-requirements}.
 
 \paragraph{Elements, relations, properties, and constraints.}
 The elements are the runtime components \POSAdapter, \StoreAgent, \StoreLocalInventory,
-\Outbox, \CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \SupplierGateway,
-\StoreTrackingClient and \ReportingClient, together with the two external systems at
-the boundary and the store and \DC managers as actors. The relations are four connector
-types:
+\Outbox, \CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment,
+\StoreTrackingClient and \ReportingClient, together with the external POS system and the
+external \AnalyticsClient at the boundary and the store and \DC managers as actors. The
+relations are five connector types:
 \begin{itemize}[nosep]
   \item \texttt{<<pub-sub>>} --- the single n-ary \IEP connector, with the \CFE as the
-  broker between the publishers and the subscribers;
+  pub-sub event bus between the publishers and the subscribers;
+  \item \texttt{<<event stream>>} --- a one-way stream of events with no reply, such as
+  the external POS system's sales records into the \POSAdapter;
   \item \texttt{<<request/reply>>} --- synchronous calls, such as a manager or a client
-  querying the \CentralMasterInventory or a boundary element exchanging messages with an
-  external system;
+  querying the \CentralMasterInventory;
   \item \texttt{<<data access>>} --- a component reading or writing its own persistent
   store;
   \item \texttt{<<local call>>} --- an in-process hand-off between a component and its

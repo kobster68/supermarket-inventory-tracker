@@ -1,6 +1,10 @@
 @startuml
-' Primary presentation of the Components-and-Connectors key view.
+' Primary presentation of the Components-and-Connectors key view (Figure 3).
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+' Connectors are first-class: the Inventory Exchange Protocol (IEP) is a named
+' provided interface drawn as a lollipop/port on the CFE pub-sub event bus; the
+' Outbox, the CFE event store and the databases are queue and store shapes; every
+' edge is labelled with its connector type and protocol.
 !include style.puml
 title Components-and-Connectors view: primary presentation
 
@@ -8,78 +12,91 @@ skinparam componentStyle rectangle
 left to right direction
 skinparam nodesep 12
 skinparam ranksep 34
-skinparam rectangleBorderColor #475569
 
 ' ---- store side (one store, drawn in full, x N) -------------------------------
 actor "Store\nmanager" as SMGR
-node "External\nPOS system" as POS #dae8fc
+node "External\nPOS system" as POS #6FA8DC
 
 rectangle "Store  (one of N: 3 now, up to 10)" as STORE {
-  component "POS Adapter" as POSAD #dae8fc
-  component "Store Agent" as SA #d5e8d4
-  database "Store-Local\nInventory" as SLI #e1d5e7
-  queue "Outbox" as OB #e1d5e7
+  component "POS Adapter" as POSAD #6FA8DC
+  component "Store Agent" as SA #93C47D
+  database "Store-Local\nInventory" as SLI #8E7CC3
+  queue "Outbox" as OB #8E7CC3
 }
 
 ' ---- distribution center ------------------------------------------------------
 rectangle "Distribution Center" as DCB {
-  component "Communications\nFront-End\n(pub-sub broker)" as CFE #fff2cc
-  database "CFE event\nstore" as CFEDB #e1d5e7
-  component "DC Agent" as DCA #fff2cc
-  component "Central Master\nInventory" as CMI #fff2cc
-  database "Master\ninventory DB" as CMIDB #e1d5e7
-  component "Shipping-Order\nFulfillment" as SOG #fff2cc
-  component "Supplier Gateway" as SG #dae8fc
-  component "Store-Tracking\nClient" as STC #fff2cc
-  component "Reporting Client" as RC #fff2cc
+  component "Communications\nFront-End\n(pub-sub event bus)" as CFE #F1C232
+  interface "IEP\n(publish, ack)" as IEPIF
+  interface "IEP\n(subscribe, deliver)" as DLV
+  database "CFE event\nstore" as CFEDB #8E7CC3
+  component "DC Agent" as DCA #F1C232
+  component "Central Master\nInventory" as CMI #F1C232
+  database "Master\ninventory DB" as CMIDB #8E7CC3
+  component "Shipping-Order\nFulfillment" as SOF #F1C232
+  component "Store-Tracking\nClient" as STC #F1C232
+  component "Reporting Client" as RC #F1C232
 }
 actor "DC\nmanager" as DMGR
-node "External\nsupplier/ERP system" as ERP #dae8fc
+node "External Analytics\nClient (future\nsubscriber)" as ANLY #6FA8DC
 
-' keep the DC manager to the right of the DC box so its query arrows enter from the
-' right, clear of the "Distribution Center" boundary title at the top of the box
-CMIDB -[hidden]right- DMGR
+' the CFE provides the IEP on two ports (lollipops): a publish/acknowledge side and
+' a subscribe/deliver side
+CFE -- IEPIF
+CFE -- DLV
 
-' ---- connectors ---------------------------------------------------------------
-POS --> POSAD : <<request/reply>>\nsales records
+' ---- connectors (every edge: <<type>> protocol) -------------------------------
+POS --> POSAD : <<event stream>>\nsales records
 POSAD --> SA : <<local call>>\nInventory Events
 SMGR --> SA : <<request/reply>>\nlocal inventory queries
 SA --> SLI : <<data access>>\napply, read
 SA --> OB : <<data access>>\nappend (ordered)
-OB --> CFE : <<pub-sub>> publish\nIEP over TLS [secure]
-CFE --> OB : <<pub-sub>> acknowledge\nIEP over TLS [secure]
-DCA --> CFE : <<pub-sub>> publish
-CFE --> CFEDB : <<data access>>\npersist
-CFE --> CMI : <<pub-sub>> notify
-CFE --> SOG : <<pub-sub>> notify
-CFE --> STC : <<pub-sub>> notify
-CFE --> RC : <<pub-sub>> notify
+OB --> IEPIF : <<pub-sub>> publish\nIEP / TLS 1.3 mutual [secure]
+IEPIF --> OB : <<pub-sub>> acknowledge\n[secure]
+DCA --> IEPIF : <<pub-sub>> publish\nIEP
+CFE --> CFEDB : <<data access>>\npersist, retain
+CFEDB --> CFE : <<data access>>\nreplay read
+DLV --> CMI : <<pub-sub>> notify
+DLV --> SOF : <<pub-sub>> notify
+DLV --> STC : <<pub-sub>> notify
+DLV --> RC : <<pub-sub>> notify
+DLV --> ANLY : <<pub-sub>> notify
+CMI --> DLV : <<pub-sub>>\nack (applied through N)
 CMI --> CMIDB : <<data access>>
-SOG --> CMI : <<request/reply>> read
+SOF --> CMI : <<request/reply>> read
 RC --> CMI : <<request/reply>> query
 STC --> CMI : <<request/reply>> query
-SOG --> SG : <<local call>>\nshipping, purchase orders
-SG --> ERP : <<request/reply>>\norders, receipts
 DMGR --> RC : <<request/reply>> reports
 DMGR --> STC : <<request/reply>> store status
 
+' keep the DC manager to the right of the client components, clear of the IEP ports and labels
+CMIDB -[hidden]down- DMGR
+
 note bottom of CFE
-  One n-ary publish-subscribe connector (the Inventory
-  Exchange Protocol): the CFE broker joins every publisher
-  (store Outboxes, DC Agent) to every subscriber. Drawn once.
+  The CFE is the pub-sub event bus of the Publish-Subscribe pattern
+  (Bass, Clements, and Kazman 129-130). It provides one interface, the
+  Inventory Exchange Protocol. Publishers (store Outboxes x N, the DC
+  Agent) publish and are acknowledged; every subscriber receives every
+  event, filters locally, and acknowledges a cumulative cursor (applied
+  through sequence N per source). The event store retains each accepted
+  event until every subscription has acknowledged past it plus a
+  retention window, and serves the replay read path to a subscriber that
+  fell behind or restarted.
 end note
 
 legend right
 |= Notation |= Meaning |
 | green fill | store-side runtime component |
-| yellow fill | distribution-center runtime component |
+| gold fill | distribution-center runtime component |
 | blue fill | external system or boundary element |
 | purple database / queue | durable, ordered persistent store |
+| circle on a stalk (lollipop) | a provided interface (port) a connector attaches to |
 | stick figure | human role (store or DC manager), not a component |
-| <<pub-sub>> | n-ary publish-subscribe connector (IEP) |
-| <<request/reply>> | synchronous request/reply connector |
+| <<pub-sub>> | the n-ary publish-subscribe connector (the IEP) |
+| <<event stream>> | a one-way stream of events, no reply |
+| <<request/reply>> | a synchronous request and reply |
 | <<data access>> | a component reading or writing its own store |
 | <<local call>> | in-process hand-off between a component and its boundary element |
-| [secure] | a store-to-DC network leg carried over a secure channel |
+| [secure] | a store-to-DC network leg over TLS 1.3 with mutual certificates |
 endlegend
 @enduml

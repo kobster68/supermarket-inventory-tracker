@@ -1,0 +1,51 @@
+@startuml
+' Behavior 3 (new): recovery and reconciliation after a failure.
+' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
+' Store-local inventory and the master record are both projections of the per-source
+' event log. The side that lost state rebuilds by replay from the authoritative log;
+' a resync compares per-source sequence watermarks first to decide what is missing.
+!include style.puml
+title Components-and-Connectors view: behavior, recovery and reconciliation
+
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 235
+
+participant "Store Agent" as SA #93C47D
+database "Store durable log\n(Outbox + local\nevent log)" as SLOG #8E7CC3
+database "Store-Local\nInventory" as SLI #8E7CC3
+participant "Communications\nFront-End" as CFE #F1C232
+database "CFE event store" as CFEDB #8E7CC3
+participant "Central Master\nInventory" as CMI #F1C232
+
+== Master-inventory crash and rebuild (AV-3) ==
+CMI -> CMI : process crashes
+note over CFE, CFEDB : the CFE keeps accepting and persisting events\nwhile the master is down; stores keep publishing
+CMI -> CFE : subscribe (resume)
+CMI -> CFE : resync (per-source lastKnownSequence)
+CFE --> CMI : watermarks per source\n(acceptedThrough, earliestRetained)
+note over CMI, CFE : compare per-source watermarks to find the gap
+CMI -> CFEDB : replay-from-sequence (read path, per source)
+CFEDB --> CMI : missing events in source order
+note over CMI : apply idempotently; the master record is\ncurrent again within 30 min, store operation\nnever stops (AV-3)
+
+== Store node restart and rebuild (TEST-2) ==
+SA -> SA : supervised restart\n(in-memory state lost)
+note over SLOG : the Outbox and local event log are durable\nand survive the restart
+SA -> SLOG : resync: read per-source watermarks
+SLOG --> SA : last applied / last appended sequence
+note over SA, SLOG : compare per-source watermarks to decide what to replay
+SA -> SLOG : replay local event log
+SLOG --> SA : events in source order
+SA -> SLI : rebuild projection (idempotent)
+SA -> CFE : resync, then replay unacknowledged Outbox events\nIEP / TLS 1.3 mutual certs [secure]
+note over SA, CFE : backlog drains at up to 2,000 events/s per store\nwhile live sales continue (PERF-4); detection and\nrestored access are measured to within 1 s (TEST-2)
+
+legend right
+  Both inventory copies are projections of the per-source
+  event log. The side that lost state compares per-source
+  sequence watermarks, then replays from the authoritative
+  log: the store's own durable log for the store, the CFE
+  event store for the master. Replay is idempotent, so no
+  event is lost or applied twice.
+endlegend
+@enduml

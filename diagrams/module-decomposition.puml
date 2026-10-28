@@ -1,5 +1,5 @@
 @startuml
-' Primary presentation of the Module Decomposition view (the primary view).
+' Primary presentation of the Module Decomposition view (Figure 7, the primary view).
 ' Authored in issue #9. Renders through scripts/render-diagrams.sh.
 ' Nesting shows the is-part-of relation; dashed <<uses>> arrows show the uses relation.
 ' Leaf sub-modules are rectangles (referenced by alias) nested in the subsystem packages,
@@ -9,54 +9,58 @@ title Module decomposition view: package diagram
 
 skinparam packageStyle rectangle
 skinparam PackageBackgroundColor white
-skinparam PackageBorderColor #475569
-skinparam RectangleBackgroundColor #f8fafc
-skinparam RectangleBorderColor #475569
+skinparam PackageBorderColor #203864
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam RectangleBorderColor #203864
 skinparam nodesep 14
 skinparam ranksep 30
 
-package "Store Subsystem" as STORE #d5e8d4 {
+package "Store Subsystem" as STORE #93C47D {
   rectangle "POS Adapter"
-  rectangle "Store Agent"
+  rectangle "Store Agent\n(incl. Order Raising)"
   rectangle "Store-Local\nInventory"
   rectangle "Outbox"
 }
 
-package "Communications Front-End" as CFE #fff2cc {
-  rectangle "Broker"
+package "Communications Front-End" as CFE #F1C232 {
+  rectangle "Event Bus"
   rectangle "Event Store"
   rectangle "Subscription\nManagement"
 }
 
-package "Distribution Center Subsystem" as DC #fff2cc {
+package "Distribution Center Subsystem" as DC #F1C232 {
   rectangle "DC Agent"
   rectangle "Central Master\nInventory"
   rectangle "Shipping-Order\nFulfillment"
-  rectangle "Supplier Gateway"
   rectangle "Store-Tracking\nClient"
   rectangle "Reporting Client"
 }
 
-package "Common" as COMMON #e2e8f0 {
+package "Common" as COMMON #D9D9D9 {
   rectangle "Inventory Exchange\nProtocol Library" as IEPLIB
   rectangle "Domain Model" as DM
 }
 
-' ---- uses relations (5): every subsystem uses Common's Domain Model;
-'      the Store and DC subsystems also use the IEP library. ----------------------
+node "External Analytics Client\n(external user of the\nIEP library)" as ANLY #6FA8DC
+
+' ---- uses relations: every subsystem uses Common's Domain Model; the Store and DC
+'      subsystems also use the IEP library; the external analytics client uses the
+'      IEP library from outside the system. ---------------------------------------
 STORE ..> DM : <<uses>>
 CFE   ..> DM : <<uses>>
 DC    ..> DM : <<uses>>
 STORE ..> IEPLIB : <<uses>>
 DC    ..> IEPLIB : <<uses>>
+ANLY  ..> IEPLIB : <<uses>>
 
 legend right
 |= Notation |= Meaning |
 | coloured package | top-level module (subsystem) |
 | nested box | sub-module (the is-part-of relation) |
 | green fill | Store Subsystem (realises the store-side runtime components) |
-| yellow fill | distribution-center modules (realise the DC-side runtime components) |
+| gold fill | distribution-center modules (realise the DC-side runtime components) |
 | grey fill | Common: shared code, realises no runtime component on its own |
+| blue fill | external user of the system's shared code |
 | dashed arrow <<uses>> | one module uses another (depends on it) |
 endlegend
 @enduml
