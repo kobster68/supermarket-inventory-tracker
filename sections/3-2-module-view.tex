@@ -54,7 +54,7 @@ realises none, being shared code rather than a running element.
 \textbf{Module} & \textbf{Responsibility} & \textbf{Runtime components realised}\\\hline
 Store Subsystem & Code that runs in a store: converts point-of-sale records into \InventoryEvent{}s, keeps the store's own inventory copy, and buffers events for guaranteed, ordered delivery to the \DC. & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
 \CFE & The broker code at the \DC: persists each event, acknowledges it, manages subscriptions, and fans out by topic. Sub-modules: Broker, Event Store, Subscription Management. & \CFE, CFE event store\\\hline
-Distribution Center Subsystem & The \DC-side application code: the master record, shipping-order computation, the supplier exchange, and the subscriber clients. & \DCAgent, \CentralMasterInventory, \ShippingOrderGen, \SupplierGateway, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
+Distribution Center Subsystem & The \DC-side application code: the master record, shipping-order computation, the supplier exchange, and the subscriber clients. & \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \SupplierGateway, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
 Common & Shared code used by the other three modules: the domain types (Figure~\ref{fig:domain-model}) and the \IEP library. & None\\\hline
 \end{tabularx}
 \caption{Element catalog --- modules of the module decomposition view and the runtime components each realises.}
@@ -120,8 +120,7 @@ the external point-of-sale and supplier/ERP systems are reached only through the
   \item \emph{More stores:} not a module concern --- every store is the same Store
   Subsystem, so the chain grows by instances, not modules (\scnref{SCAL-1}).
   \item \emph{A new platform:} platform-specific code is confined to the adapter
-  sub-modules (the \POSAdapter and \SupplierGateway), so a port touches only those
-  (\scnref{PORT-1}).
+  sub-modules (the \POSAdapter and \SupplierGateway), so a port touches only those.
 \end{itemize}
 
 \subsubsection{Architecture background}

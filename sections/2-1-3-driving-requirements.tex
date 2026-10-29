@@ -124,7 +124,7 @@ stakeholders.
 \qascenario{USE-1}
   {A store manager who is new to the system.}
   {Wants to produce a shipping order.}
-  {\ShippingOrderGen and its manager screen.}
+  {\ShippingOrderFulfillment and its manager screen.}
   {Normal operation.}
   {The system proposes an order from minimum stock quantities and sales. The manager checks it and confirms it.}
   {After at most 1 hour of training, 9 of 10 managers complete an order without help in less than 5 minutes.}
@@ -184,14 +184,6 @@ stakeholders.
   {Test environment.}
   {The harness records the time of the failure, the detection and the restored access.}
   {Recovery time measured to within 1 s; the test shows an outage of at most 30 minutes.}
-
-\qascenario{PORT-1}
-  {An operator or a developer.}
-  {Moves a store or \DC node to a different operating system or hardware.}
-  {The \StoreAgent or the \DC services.}
-  {Maintenance window.}
-  {We rebuild the node with a platform adapter and new configuration; the \IEP does not change.}
-  {0 changes to the \IEP or other nodes; done in at most 5 person-days; all \texttt{AV} and \texttt{PERF} scenarios still pass.}
 \endgroup
 
 \paragraph{Utility tree.}
@@ -226,7 +218,6 @@ Integrability & External systems & \scnref{INT-1} External system over the \IEP 
  & Alerting clients & \scnref{INT-2} Variable alerting clients & (M, L)\\\hline
 Testability & Delivery under loss & \scnref{TEST-1} Delivery under message loss & (M, M)\\\cline{2-4}
  & Failover timing & \scnref{TEST-2} Failover timing & (M, M)\\\hline
-Portability & Node platform change & \scnref{PORT-1} Node moved to another platform & (L, M)\\\hline
 \end{tabularx}
 \caption{Draft utility tree: (business value, technical risk).}
 \label{tab:utility-tree}

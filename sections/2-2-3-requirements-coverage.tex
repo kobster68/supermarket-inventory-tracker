@@ -23,7 +23,7 @@ Real-time sales; local store inventory and a master covering store and \DC stock
 Shipping orders from minimum stock quantities and current sales.
 & \scnref{USE-1}
 & Maintain task model (P), for manager assistance
-& \ShippingOrderGen computes orders; a manager-facing task flow remains proposed.\\\hline
+& \ShippingOrderFulfillment computes orders; a manager-facing task flow remains proposed.\\\hline
 Front-end, exchange protocol and alerts for central inventory, store tracking and variable additional clients.
 & \scnref{INT-1}, \scnref{INT-2}, \scnref{SCAL-2}, \scnref{MOD-1}
 & Use an intermediary; Adhere to standards
@@ -75,15 +75,11 @@ Secure store--\DC communication.
 Understandable orders and reports with minimal manager training.
 & \scnref{USE-1}, \scnref{USE-2}
 & Maintain task model (P)
-& Proposed manager guidance around \ShippingOrderGen and \ReportingClient; validate representative tasks with managers.\\\hline
+& Proposed manager guidance around \ShippingOrderFulfillment and \ReportingClient; validate representative tasks with managers.\\\hline
 Hidden maintainability and testability requirements.
 & \scnref{MOD-1}, \scnref{MOD-2}, \scnref{TEST-1}, \scnref{TEST-2}
 & Use an intermediary; Encapsulate (P); Sandbox (P); Specialized interfaces (P)
 & Stable \CFE/catalog boundaries; controlled loss/crash tests and observable \Outbox, \CFE and subscriber state (P).\\\hline
-Hidden portability requirement.
-& \scnref{PORT-1}
-& Encapsulate (P); Adhere to standards; Defer binding (configuration time) (P)
-& \IEP plus proposed platform adapters and deployment configuration for \StoreAgent and \DC services; target-platform validation remains required.\\\hline
 \end{tabularx}
 \endgroup
 

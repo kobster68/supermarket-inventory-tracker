@@ -14,7 +14,7 @@ database "Store-Local\nInventory" as SLI #e1d5e7
 queue "Outbox" as OB #e1d5e7
 participant "Communications\nFront-End" as CFE #fff2cc
 database "CFE event store" as CFEDB #e1d5e7
-participant "Subscribers\n(CMI, Shipping-Order Gen,\nStore-Tracking, Reporting)" as SUB #fff2cc
+participant "Subscribers\n(CMI, Shipping-Order Fulfillment,\nStore-Tracking, Reporting)" as SUB #fff2cc
 
 POS -> POSAD : sales record
 POSAD -> SA : Inventory Event
