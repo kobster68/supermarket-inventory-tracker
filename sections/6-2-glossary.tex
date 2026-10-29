@@ -16,8 +16,8 @@
 \item[Acknowledgement] The confirmation the Communications Front-End returns once it has durably persisted an inventory event.
 \item[Central Master Inventory] The authoritative record of all store and distribution-center inventory, built by subscribing to every inventory event from every Store Agent and the DC Agent.
 \item[DC Agent] The runtime component at the distribution center that publishes the center's own inventory events (goods receipts and shipment dispatches) through the Communications Front-End, so the master record also covers distribution-center stock.
-\item[Subscriber] Any component that subscribes to the Communications Front-End; the named subscribers are the Central Master Inventory, Shipping-Order Generation, the Store-Tracking Client, and the Reporting Client, and their number is variable by design.
-\item[Shipping-Order Generation] The distribution-center subscriber that computes shipping orders from minimum stock quantities and real-time sales and sends purchase and shipping orders to the supplier system through the Supplier Gateway.
+\item[Subscriber] Any component that subscribes to the Communications Front-End; the named subscribers are the Central Master Inventory, Shipping-Order Fulfillment, the Store-Tracking Client, and the Reporting Client, and their number is variable by design.
+\item[Shipping-Order Fulfillment] The distribution-center subscriber that receives shipping orders raised by the stores, reads the master record, and presents each order to the DC manager for fulfilment.
 \item[Store-Tracking Client] A subscriber that follows inventory events to track stock at the store level.
 \item[Reporting Client] A subscriber that answers manager queries such as lowest stock, overstocked items, and the total value of a product family.
 \item[POS Adapter] The boundary element inside the Store Agent that turns the external point-of-sale system's sales records into inventory events.
