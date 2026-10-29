@@ -95,6 +95,8 @@ Lost confirmations cause unchanged retries.
 \emph{Post:} Persist/return subscription and \texttt{startAfter}, the per-source
 accepted positions (zero if empty). Live events follow these positions; history
 requires \opReplay. Identical active requests return the same record/positions.
+The subscription's initial \texttt{appliedThrough} is \texttt{startAfter}; older
+history is available only while retained. Disconnection does not remove a subscription.
 \emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIBER}; rejection creates nothing.
 \item[\opUnsubscribe\texttt{(subscriberId, subscriptionId)}]
 \emph{Pre/meaning:} Owner removes its subscription.
@@ -117,10 +119,18 @@ Publisher-ahead positions require \opResync rather than skipping.
 \item[\opResync\texttt{(role, source, lastKnownSequence, subscriptionId?)}]
 \emph{Pre/meaning:} Authorized publisher/subscriber reconciles a nonnegative
 position; subscribers identify an owned active subscription.
-\emph{Post:} Return \texttt{acceptedThrough}, \texttt{earliestRetained} (first
-replayable sequence; accepted position plus one for an empty log), and recovery action.
-Publishers resend after broker position; subscribers replay after their cursor.
-No stock/sequence resets.
+\emph{Post:} Return \texttt{source}, the supplied \texttt{lastKnownSequence},
+\texttt{acceptedThrough}, \texttt{earliestRetained} (first replayable sequence;
+accepted position plus one for an empty log), and, for subscribers, the \CFE's
+stored \texttt{appliedThrough}. These are durable watermarks, not receipt-in-memory
+positions. A publisher compares its saved acknowledgement with \texttt{acceptedThrough}
+and resends retained messages after the latter. A subscriber compares its local
+durable cursor with the returned positions and requests \opReplay after its local
+cursor; a higher server-side acknowledgement never proves restored local state.
+If that cursor precedes retained history, restore a consistent snapshot/backup
+before replay. Store-local inventory rebuilds from its own durable log/snapshot,
+using local applied/appended positions, before reconciling publisher delivery.
+No stock or sequence is reset by this operation.
 \emph{Errors:} Common errors; \texttt{UNKNOWN\_SUBSCRIPTION},
 \texttt{INVALID\_CURSOR} (subscriber ahead), \texttt{RECOVERY\_REQUIRED} with
 bounds for missing history. Restore a consistent snapshot/backup and positions
@@ -137,7 +147,8 @@ atomically save changes, deduplication and processing cursors. Identity records
 survive restarts throughout retry/replay history; unverifiable old events require recovery.
 
 Each publisher owns its acknowledged position (the \Outbox for a store, the \DCAgent for the \DC), saved before
-pruning. Clients subscribe before receiving and recover using separate subscriber
+pruning its outbound copy only after \CFE acceptance. This does not prune the
+separate local log/snapshot needed for store recovery. Clients subscribe before receiving and recover using separate subscriber
 cursors. Transient errors are retried unchanged with capped exponential backoff/jitter,
 respecting \texttt{retryAfterMs}; unacknowledged events are never discarded.
 Invalid requests require correction; gaps use \opReplay or \opResync
@@ -146,28 +157,43 @@ Invalid requests require correction; gaps use \opReplay or \opResync
 Offline updates continue until \Outbox exhaustion, which rejects updates atomically.
 Expired history never silently advances cursors.
 
+\subparagraph{Retention and pruning.}
+The \CFE may prune a message only after every active subscription for its source
+has acknowledged through its sequence and a further 60 minutes has elapsed.
+The timer starts when the last required acknowledgement arrives; without a relevant
+subscription it starts at durable acceptance. A new subscription covers messages
+after its \texttt{startAfter}; earlier history is best-effort replay while retained.
+A disconnected subscription remains active and pins unread history; only explicit
+\opUnsubscribe removes its obligation. Pruning reclaims eligible records to control
+storage growth; a stalled subscription can still exhaust capacity, which triggers
+backpressure rather than silent deletion. Identity records remain available at least
+as long as the corresponding replay history and supported retry window.
+
 \subparagraph{Variability, limits, and quality properties.}
 We design for the required 100 events/s/store for ten stores (1{,}000/s), with additional
 capacity for \DC traffic, retries and fan-out. Clients use \opSubscribe and
 \opUnsubscribe at runtime without restarts or publisher changes. Each deployment
 declares tested client/queue limits and returns \texttt{BUSY} at capacity.
-We propose, without claiming validation, 2{,}000 store events/s during catch-up,
-1--100-event replay batches and at least 60 minutes of replay/identity history,
-extended for outage/catch-up headroom. Our proposed 95th-percentile targets are
+The decided catch-up capacity is 2{,}000 events/s per recovering store while live
+sales continue (\scnref{PERF-4}); this is a design requirement, not a measured result.
+We use 1--100-message replay batches and the retention rule above, provisioning
+capacity for pinned history and recovery traffic. Our proposed 95th-percentile targets are
 1 second to \opAck and 2 seconds to first delivery, measured from transmission
 at live load with healthy infrastructure, no backlog and within client limits;
 application processing is excluded. We provide eventual, at-least-once delivery
 assuming connectivity returns, retries continue and capacity/storage remain available.
-Beyond retention, recovery needs consistent snapshots/backups; permanent loss of
+If required history was already pruned, recovery needs consistent snapshots/backups; permanent loss of
 all copies is unrecoverable. We leave system sizing to Section~\ref{sec:analysis-results}.
 
 \subparagraph{Element requirements.}
 The \CFE requires storage that atomically commits messages, identities and positions before
 \opAck and supports consistent backup/restore. The durable registry retains owners,
 source selections, acknowledged delivery positions and start/removal records;
-subscribers retain atomic checkpoints. The environment supplies TLS on the store--\DC
-legs, peer authentication of publishers and subscribers (mechanism still open),
-credentials, revocation and source permissions.
+subscribers retain atomic checkpoints. Store--\DC legs use TLS 1.3 with mutual
+certificate authentication: each peer validates the other's certificate and binds
+its authenticated identity to source/subscription permissions. The environment
+supplies trusted certificates, credential provisioning and revocation; external
+\AnalyticsClient connections use the same protection with read-only data scope.
 We restrict database access; read access and wildcards grant no extra publishing scope.
 UTC timestamps and monotonic timeout clocks keep recovery independent of clock adjustments.
 
@@ -190,18 +216,20 @@ and \texttt{appliedThrough=41} after their local commit.
 On authenticated reconnect, it sends \opReplay: publisher role, source
 \texttt{store/17}, saved cursor 41, events \texttt{[e42,e43]}, no subscription ID.
 The \CFE persists, acknowledges and fans out each event; the \Outbox saves progress
-before pruning. \Subscriber recovery uses its own cursor/subscription ID without an
-event batch; \opResync reconciles missing history. Identical retries are deduplicated.
+before pruning. \Subscriber recovery first obtains \opResync watermarks, then
+replays from its own durable cursor with its subscription ID and no event batch.
+Identical retries are deduplicated; the \CFE retains records until subscriber
+acknowledgements and the additional 60-minute window permit pruning.
 
 \subparagraph{Interface scenario coverage.}
 \begin{sloppypar}
 We map the scenarios as follows. \scnref{AV-1}, \scnref{AV-2}: buffering, \opPublish, \opAck, publisher \opReplay;
 \scnref{AV-3}: subscriber \opReplay, \opResync, atomic cursors.
-\scnref{PERF-1}, \scnref{PERF-2}, \scnref{SCAL-1}: capacity/backpressure;
+\scnref{PERF-1}, \scnref{PERF-2}, \scnref{PERF-4}, \scnref{SCAL-1}: capacity/backpressure;
 \scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-2}: runtime
 \opSubscribe and \opUnsubscribe; \scnref{MOD-2}: local family filtering.
 \scnref{INT-1}: read-only \AnalyticsClient subscription.
-\scnref{SEC-1}: restricted storage; \scnref{SEC-2}: secure channels;
+\scnref{SEC-1}: restricted storage; \scnref{SEC-2}: TLS 1.3 with mutual certificates;
 \scnref{SEC-3}: source authorization. \scnref{TEST-1}: IDs/acknowledgements and \opReplay;
 \scnref{TEST-2}: timeouts and \opResync, plus deployment failover tests.
 \scnref{PERF-3}, \scnref{USE-1}, \scnref{USE-2} concern reporting/UI outcomes,
