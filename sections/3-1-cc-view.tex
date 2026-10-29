@@ -25,33 +25,41 @@ and fans out to every subscriber; and what the system does when the link between
 and the \DC fails and later recovers.
 
 \subsubsection{View packet overview}
-The view has one view packet, drawn at the level of the whole system. One store is
-drawn in full with a ``one of N'' multiplicity, and the \DC is drawn in full. We chose
-a single system-level packet because the stores are identical, so a separate packet per
-store would repeat the same picture, and because the interactions worth showing are the
-store-to-\DC event flow and the fan-out at the \DC, both of which are visible in one
-diagram. The packet is therefore complete for the runtime concerns of this draft and
-does not duplicate itself.
+The view has one view packet, drawn at the level of the whole system: one store in full
+with a ``one of N'' multiplicity, and the \DC in full. We chose a single system-level
+packet because the stores are identical, so a separate packet per store would repeat the
+same picture, and the interactions worth showing (the store-to-\DC event flow and the
+fan-out at the \DC) are visible in one diagram.
 
 \subsubsection{Architecture background}
 \label{sec:cc-background}
 This background covers only decisions whose scope is this view. The choice of the
 publish--subscribe pattern itself, and the alternatives we rejected (synchronous
-client--server and federated per-store brokers), are argued once in
+client--server and a full message bus in every store), are argued once in
 Section~\ref{sec:approaches} and are not repeated here.
 
 We draw the \IEP connector as a single n-ary publish--subscribe connector rather than as
-a mesh of point-to-point links. A publish--subscribe connector is naturally n-ary: one
-broker joins many publishers to many subscribers (Bass, Clements, and Kazman 335).
-Drawing it once, centered on the \CFE broker, keeps the picture honest about what is one
+a mesh of point-to-point links. The \CFE is the event bus of the Publish-Subscribe
+pattern, which joins many publishers to many subscribers through one connector (Bass,
+Clements, and Kazman 129--130); a publish--subscribe connector is naturally n-ary (335).
+Drawing it once, centered on the \CFE, keeps the picture honest about what is one
 connector, and it stays readable as clients are added, which is the behavior the
 modifiability and scalability scenarios ask for.
 
-We document two behaviors because they are the two the runtime concerns turn on. The
+We carry one stream of inventory events, partitioned per source, rather than routing by
+topic. Every subscriber receives every event and filters locally. This trades a little
+extra fan-out for not maintaining a family-topic routing table at the \CFE: with at most
+ten subscribers the extra delivery cost is small, while a topic scheme would add routing
+logic and family-topic maintenance that would track the product-family hierarchy.
+Store-raised shipping orders travel as a second message type on the same connector, with
+the same at-least-once, per-source ordering and acknowledgement.
+
+We document three behaviors because they are the three the runtime concerns turn on. The
 normal path (publish, acknowledge, fan-out) shows how delivery, throughput and the
 secure channel work on a good day. The outage path (buffer, reconnect, replay) shows how
-the system meets its availability and delivery guarantees on a bad one. Between them they
-exercise every runtime scenario that touches this view.
+the system meets its availability and delivery guarantees on a bad one. The recovery path
+(watermark compare, then replay) shows how a store or the master record rebuilds after it
+loses state. Between them they exercise every runtime scenario that touches this view.
 
 \subsubsection{Variability mechanisms}
 \label{sec:cc-variability}
@@ -59,23 +67,28 @@ The view has two variation points, both exercised at run time.
 \begin{itemize}[nosep]
   \item \emph{Number of stores.} The chain starts at three stores and is designed to
   reach ten (\scnref{SCAL-1}). Each store is an instance of the \Store boundary in the
-  primary presentation, so adding one adds an instance and a publisher on the \IEP
-  connector; nothing else in the view changes.
+  primary presentation, so adding one is one configured \StoreAgent plus one registered
+  source identity: it adds an instance and a publisher on the \IEP connector, with no
+  change to the \CFE or the subscribers. Nothing else in the view changes.
   \item \emph{Number and kind of subscribers.} A client subscribes to the \CFE at run
   time through the \IEP, so a new kind of subscriber is added without changing the \CFE
-  (\scnref{MOD-1}, \scnref{SCAL-2}, \scnref{INT-2}). Topics are named by source and
-  product family, and the product-family hierarchy can gain a nesting level
-  (\scnref{MOD-2}) without a change to the connector.
+  (\scnref{MOD-1}, \scnref{SCAL-2}, \scnref{INT-2}). Because every subscriber receives
+  every event and filters locally, the product-family hierarchy can gain a nesting level
+  (\scnref{MOD-2}) as a data change, with no change to the connector.
 \end{itemize}
 
 \subsubsection{Primary presentation}
 Figure~\ref{fig:cc-primary} is the primary presentation. The store boundary holds the
 \POSAdapter, the \StoreAgent, the \StoreLocalInventory and the \Outbox; the external POS
-system sits outside it. The \DC boundary holds the \CFE and its event store, the
-\DCAgent, the \CentralMasterInventory and its database, \ShippingOrderFulfillment, the
-\SupplierGateway, a \StoreTrackingClient and a \ReportingClient; the external
-supplier/ERP system sits outside it. The store and \DC managers appear as actors who
-query the system. The connectors and the notation are read from the figure's key.
+system sits outside it and feeds a one-way event stream in. The \DC boundary holds the
+\CFE and its event store, the \DCAgent, the \CentralMasterInventory and its database,
+\ShippingOrderFulfillment, a \StoreTrackingClient and a \ReportingClient; the
+\AnalyticsClient is an external subscriber, drawn outside the boundary as a future client.
+The store and \DC managers appear as actors who query the system. The \CFE is the pub-sub
+event bus; it provides the \IEP, drawn as a named interface (a port with a lollipop) that
+the publishers and the subscribers attach to, so the connector is a first-class element;
+the \Outbox, the CFE event store and the two databases are queue and store shapes. The
+connectors and the notation are read from the figure's key.
 
 \begin{figure}[htbp]
 \centering
@@ -90,11 +103,10 @@ interfaces part of the catalog is the Interfaces subsection
 (Section~\ref{sec:cc-interfaces}), which follows.
 
 \paragraph{Elements.}
-Table~\ref{tab:cc-components} lists the components. Location, persistent state and the
-quality properties that matter for each element are the properties named in the
-viewpoint (Section~\ref{sec:viewpoints}). The two internal stores in the figure, the CFE
-event store and the master inventory database, appear as their own rows, so every
-component box in the figure has a row and every row is a box.
+Table~\ref{tab:cc-components} lists the components. Location, persistent state and quality
+properties are the properties named in the viewpoint (Section~\ref{sec:viewpoints}). The
+two internal stores, the CFE event store and the master inventory database, have their own
+rows, so every box in the figure has a row and every row is a box.
 
 \begin{table}[htbp]
 \centering
@@ -104,21 +116,20 @@ component box in the figure has a row and every row is a box.
 \begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.15\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.10\linewidth}|>{\raggedright\arraybackslash}p{0.11\linewidth}|>{\raggedright\arraybackslash}p{0.15\linewidth}|}
 \hline
 \textbf{Element} & \textbf{Responsibility} & \textbf{Location} & \textbf{Persistent state} & \textbf{Key quality properties}\\\hline
-\POSAdapter & Turns the external POS system's sales records into \InventoryEvent{}s. & Store (boundary) & None & Integration (\scnref{INT-1})\\\hline
-\StoreAgent & Applies each event to the \StoreLocalInventory and \Outbox in one step; forwards to the \CFE; serves the store manager's local inventory queries; restarts from the \Outbox and a snapshot. & Store & Via its stores & Availability, recovery (\scnref{AV-1})\\\hline
-\StoreLocalInventory & The store's inventory copy, readable and updatable with no WAN. & Store & Yes (database) & 99\% local availability (\scnref{AV-1})\\\hline
-\Outbox & Durable, ordered queue holding events until the \CFE acknowledges them; keeps the last acknowledged sequence number and replays unacknowledged events on reconnect. & Store & Yes (queue) & Delivery (\scnref{AV-2}); buffers a 30-min outage\\\hline
-\CFE & Pub-sub broker: persists each event, acknowledges it to the publishing \Outbox, publishes by topic to every subscriber. & \DC & Yes (event store) & 100\% delivery (\scnref{AV-2}); \mbox{1{,}000} events/s (\scnref{PERF-2})\\\hline
-\DCAgent & Publishes the \DC's own events through the \CFE. & \DC & None & Master covers \DC stock\\\hline
-\CentralMasterInventory & Authoritative record of all store and \DC stock, built from every event. After a crash it catches up by running \opSubscribe to the \CFE and \opReplay from the CFE event store at its last applied sequence. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
-\ShippingOrderFulfillment & Computes shipping orders and sends them via the \SupplierGateway. & \DC & None & Report usability (\scnref{USE-1})\\\hline
-\SupplierGateway & Exchanges orders and receipts with the external supplier/ERP system. & \DC (boundary) & None & Integration (\scnref{INT-1})\\\hline
+\POSAdapter & Turns the external POS system's sales records, arriving as a one-way event stream, into \InventoryEvent{}s. & Store (boundary) & None & Per-store throughput (\scnref{PERF-1})\\\hline
+\StoreAgent & Applies each event to the \StoreLocalInventory and \Outbox in one step; forwards to the \CFE; raises a \ShippingOrder at minimum stock; serves local inventory queries; under supervision restarts and rebuilds from the local durable log. & Store & Via its stores & Recovery (\scnref{AV-1}): supervised restart, local log the recovery source\\\hline
+\StoreLocalInventory & The store's inventory copy, readable and updatable with no WAN; a projection of the local event log. & Store & Yes (database) & 99\% local availability (\scnref{AV-1})\\\hline
+\Outbox & Durable, ordered queue holding events until the \CFE acknowledges them; keeps the last acknowledged sequence number and replays unacknowledged events on reconnect. & Store & Yes (queue) & Delivery (\scnref{AV-2}); sized for a 30-min outage at 100 events/s (\scnref{PERF-1}); catch-up 2{,}000 events/s while live (\scnref{PERF-4})\\\hline
+\CFE & The pub-sub event bus: persists each event, acknowledges it to the publishing \Outbox, delivers every event to every subscriber, and keeps a per-subscription delivered position. & \DC & Yes (event store) & 100\% delivery (\scnref{AV-2}); \mbox{1{,}000} events/s (\scnref{PERF-2})\\\hline
+\DCAgent & Publishes the \DC's own stock events (goods receipts and dispatches when goods ship) through the \CFE. & \DC & None & Master covers \DC stock\\\hline
+\CentralMasterInventory & Authoritative record of all store and \DC stock; a projection of the per-source event log. After a crash it runs \opSubscribe, compares per-source watermarks, and runs \opReplay from the CFE event store. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
+\ShippingOrderFulfillment & Subscriber that receives store-raised \ShippingOrder{}s, reads the master record, and presents each order to the \DC manager for fulfilment. & \DC & None & Order usability (\scnref{USE-1})\\\hline
 \StoreTrackingClient & Subscriber; shows a store's inventory and answers the \DC manager's store-status queries. & \DC & None & Variable client (\scnref{SCAL-2}, \scnref{INT-2})\\\hline
 \ReportingClient & Subscriber; answers the \DC manager's report queries. & \DC & None & Report load (\scnref{PERF-3}, \scnref{USE-2})\\\hline
-CFE event store & Durable log of every acknowledged event; source for replay and fan-out. & \DC & Yes & Replay (\scnref{AV-2}, \scnref{TEST-1})\\\hline
+CFE event store & Durable log of every accepted event; retains each until every active subscription has acknowledged past it plus a retention window, and serves the replay read path to a subscriber that fell behind. & \DC & Yes & Replay (\scnref{AV-2}, \scnref{AV-3}, \scnref{TEST-1})\\\hline
 Master inventory database & Holds the stock levels kept by the \CentralMasterInventory. & \DC & Yes & Access control (\scnref{SEC-1})\\\hline
-External POS system & Store point-of-sale; emits sales records. Shown for context. & External (per store) & --- & Integration (\scnref{INT-1})\\\hline
-External supplier/ERP system & Receives orders; returns goods-receipt confirmations. Shown for context. & External (at \DC) & --- & Integration (\scnref{INT-1})\\\hline
+External POS system & Store point-of-sale; emits sales records as a one-way event stream. Shown for context. & External (per store) & --- & Per-store throughput (\scnref{PERF-1})\\\hline
+\AnalyticsClient & External subscriber of the \CFE over the \IEP, a future client; receives events and filters locally. Shown for context. & External (at \DC) & --- & Integration (\scnref{INT-1})\\\hline
 \end{tabularx}
 \caption{Element catalog --- components of the Components and Connectors view.}
 \label{tab:cc-components}
@@ -130,12 +141,13 @@ local inventory, and the \DC manager queries the \ReportingClient and the
 \StoreTrackingClient for reports and store status.
 
 \paragraph{Relations.}
-Table~\ref{tab:cc-connectors} lists the connectors, grouped by the four stereotyped types
-the viewpoint defines: \texttt{<<pub-sub>>}, \texttt{<<request/reply>>},
-\texttt{<<data access>>} and \texttt{<<local call>>}. The two store-to-\DC legs of the
-\IEP connector, the publish leg and the acknowledgement leg, are the only network legs in
-the view, and both run over a secure channel (\scnref{SEC-2}); the figure marks them
-\texttt{[secure]}. Every other connector is local to a store or to the \DC.
+Table~\ref{tab:cc-connectors} lists the connectors, grouped by the five stereotyped types
+the viewpoint defines: \texttt{<<pub-sub>>}, \texttt{<<event stream>>},
+\texttt{<<request/reply>>}, \texttt{<<data access>>} and \texttt{<<local call>>}. The two
+store-to-\DC legs of the \IEP connector, the publish leg and the acknowledgement leg, are
+the only network legs in the view, and both run over TLS 1.3 with mutual certificate
+authentication (\scnref{SEC-2}); the figure marks them \texttt{[secure]}. Every other
+connector is local to a store or to the \DC.
 
 \begin{table}[htbp]
 \centering
@@ -145,58 +157,77 @@ the view, and both run over a secure channel (\scnref{SEC-2}); the figure marks 
 \begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.12\linewidth}|>{\raggedright\arraybackslash}p{0.11\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.12\linewidth}|>{\raggedright\arraybackslash}p{0.06\linewidth}|>{\raggedright\arraybackslash}p{0.15\linewidth}|}
 \hline
 \textbf{Connector} & \textbf{Type} & \textbf{Endpoints} & \textbf{Protocol} & \textbf{Secure} & \textbf{Delivery semantics}\\\hline
-\IEP bus & pub-sub (n-ary) & Publishers: store \Outbox{}es ($\times$N), \DCAgent; broker: \CFE; subscribers: \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient & \IEP over TLS on the store-to-\DC legs & Yes (store--\DC) & At-least-once, ordered per source, idempotent by event ID; acknowledged to the publishing \Outbox, then replayable\\\hline
+\IEP bus & pub-sub (n-ary) & Publishers: store \Outbox{}es ($\times$N), \DCAgent; pub-sub event bus: \CFE; subscribers: \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient, \AnalyticsClient & \IEP over TLS 1.3 with mutual certificates on the store-to-\DC legs & Yes (store--\DC) & At-least-once, ordered per source, idempotent by event ID; carries \InventoryEvent{}s and \ShippingOrder{}s; publishers acknowledged to the \Outbox, subscribers acknowledge a cumulative cursor; replayable\\\hline
 Master-inventory query & request/ reply & \ReportingClient, \StoreTrackingClient and \ShippingOrderFulfillment to the \CentralMasterInventory & Internal query API & In \DC & Synchronous, read-only\\\hline
 Manager query & request/ reply & Store manager to the \StoreAgent; \DC manager to the \ReportingClient and \StoreTrackingClient & Internal query API & In store, in \DC & Synchronous, read-only\\\hline
-POS feed & request/ reply & External POS system to the \POSAdapter & External POS protocol (to be confirmed with the external system owner) & Per owner & Request/reply; the adapter converts replies into \InventoryEvent{}s\\\hline
-Supplier exchange & request/ reply & \SupplierGateway to the external supplier/ERP system & External supplier/ERP protocol (to be confirmed) & Per owner & Orders out; goods-receipt confirmations back\\\hline
+POS feed & event stream & External POS system to the \POSAdapter & External POS protocol (to be confirmed with the external system owner) & Per owner & One-way; the adapter converts each record into an \InventoryEvent\\\hline
 Store-side store access & data access & \StoreAgent to the \StoreLocalInventory and to the \Outbox & Local & N/A & Durable, ordered append; local read and update\\\hline
-\DC-side store access & data access & \CFE to its event store; \CentralMasterInventory to its database & Local & N/A & Durable persistence\\\hline
-Boundary hand-off & local call & \POSAdapter to the \StoreAgent; \ShippingOrderFulfillment to the \SupplierGateway & In-process & N/A & In-process call between a component and its boundary element\\\hline
+\DC-side store access & data access & \CFE to its event store; \CentralMasterInventory to its database & Local & N/A & Durable persistence; the \CFE also reads the event store on the replay read path\\\hline
+Boundary hand-off & local call & \POSAdapter to the \StoreAgent & In-process & N/A & In-process call between a component and its boundary element\\\hline
 \end{tabularx}
 \caption{Element catalog --- connectors of the Components and Connectors view.}
 \label{tab:cc-connectors}
 \end{table}
 
 \paragraph{Behavior.}
-Figures~\ref{fig:cc-seq-publish} and~\ref{fig:cc-seq-outage} document the two behaviors.
+Figures~\ref{fig:cc-seq-publish},~\ref{fig:cc-seq-outage} and~\ref{fig:cc-seq-reconcile}
+document the three behaviors.
 
-Figure~\ref{fig:cc-seq-publish} is the normal path. A sale reaches the \POSAdapter,
-which hands the \StoreAgent an \InventoryEvent. In one local step the \StoreAgent applies
-the event to the \StoreLocalInventory and appends it to the \Outbox, so a store keeps
-reading and writing its own inventory without waiting on the WAN. The \Outbox then runs
-\opPublish to the \CFE over the secure channel; the \CFE persists the event, returns an
-\opAck to the \Outbox, and runs the fan-out, publishing by topic to every subscriber,
-which stays idempotent by event ID. This path answers the per-store rate of
-\scnref{PERF-1} and, at the \DC, the aggregate of \scnref{PERF-2}; the acknowledgement
-answers \scnref{AV-2}; and the secure publish and acknowledge legs answer \scnref{SEC-2}.
+Figure~\ref{fig:cc-seq-publish} is the normal path. A sale reaches the \POSAdapter as a
+one-way event stream, and the \POSAdapter hands the \StoreAgent an \InventoryEvent. In one
+local step the \StoreAgent applies the event to the \StoreLocalInventory and appends it to
+the \Outbox, so the store never waits on the WAN. The \Outbox then runs \opPublish to the
+\CFE over the secure channel; the \CFE
+persists the event, returns an \opAck to the \Outbox, and delivers the event to every
+subscriber, which filters locally and stays idempotent by event ID. Each subscriber
+acknowledges a cumulative cursor, so the \CFE holds the delivered position of every
+subscription. A store-raised \ShippingOrder travels the same path as a second message
+type. This path answers the per-store rate of \scnref{PERF-1} and, at the \DC, the
+aggregate of \scnref{PERF-2}; the acknowledgement answers \scnref{AV-2}; and the publish
+and acknowledge legs, over TLS 1.3 with mutual certificates, answer \scnref{SEC-2}.
 
 Figure~\ref{fig:cc-seq-outage} is the outage path. While the WAN link is down the store
 keeps applying events locally and the \Outbox buffers them in order, so local inventory
 stays reachable (\scnref{AV-1}). On reconnect the \Outbox runs \opReplay from the last
 acknowledged sequence number and, if a larger gap is found, \opResync; the \CFE
-acknowledges each event and the subscribers ignore duplicates by event ID, so no event
-is lost (\scnref{AV-2}, \scnref{TEST-1}). The \Outbox is sized for a full 30-minute
-outage at the per-store rate; the sizing is worked in Section~\ref{sec:analysis-results}.
+acknowledges each event and the subscribers ignore duplicates by event ID, so no event is
+lost (\scnref{AV-2}, \scnref{TEST-1}). The backlog drains at up to 2{,}000 events/s per
+store while live sales continue (\scnref{PERF-4}). The \Outbox is sized for a full
+30-minute outage at the per-store rate; the sizing is worked in
+Section~\ref{sec:analysis-results}.
 
-The same replay mechanism covers \scnref{AV-3}: after a \CentralMasterInventory crash it
-restarts, runs \opSubscribe to the \CFE, and runs \opReplay from its last applied
-sequence number against the CFE event store; because subscribers are idempotent by event
-ID, any duplicates are harmless. The replay and resync semantics (sequence numbers and
-gap handling) are specified in the interface specification, Section~\ref{sec:iep}.
+Figure~\ref{fig:cc-seq-reconcile} is the recovery path. The \StoreLocalInventory and the
+\CentralMasterInventory are both projections of the per-source event log, so the side that
+lost state rebuilds by replay from the authoritative log. Before either replays, a resync
+compares per-source sequence watermarks to decide what is missing. After a
+\CentralMasterInventory crash (\scnref{AV-3}) the \CFE keeps accepting and storing events
+while the master is down; the master then runs \opSubscribe, compares watermarks, and runs
+\opReplay from the CFE event store at its last applied sequence per source. After a store
+node restart (the \scnref{TEST-2} measure) the \StoreAgent rebuilds the \StoreLocalInventory
+from its own durable log (the \Outbox and the local event log) and resyncs with the \CFE
+before it resumes publishing and drains its backlog (\scnref{PERF-4}). Replay is
+idempotent, so no event is lost or applied twice. The replay and resync semantics are
+specified in the interface specification, Section~\ref{sec:iep}.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.74\linewidth,height=0.42\textheight,keepaspectratio]{cc-seq-publish}
+\includegraphics[width=0.70\linewidth,height=0.38\textheight,keepaspectratio]{cc-seq-publish}
 \caption{Components and Connectors view --- behavior: publish, acknowledge, and fan-out.}
 \label{fig:cc-seq-publish}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.72\linewidth,height=0.42\textheight,keepaspectratio]{cc-seq-outage}
+\includegraphics[width=0.64\linewidth,height=0.38\textheight,keepaspectratio]{cc-seq-outage}
 \caption{Components and Connectors view --- behavior: outage, buffering, and replay.}
 \label{fig:cc-seq-outage}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth,height=0.47\textheight,keepaspectratio]{cc-seq-reconcile}
+\caption{Components and Connectors view --- behavior: recovery and reconciliation after a failure.}
+\label{fig:cc-seq-reconcile}
 \end{figure}
 
 \paragraph{Constraints.}
@@ -208,6 +239,11 @@ gap handling) are specified in the interface specification, Section~\ref{sec:iep
   \item A store never blocks on the WAN; local reads and writes continue during an
   outage.
   \item An \InventoryEvent is immutable once acknowledged.
+  \item A \ShippingOrder travels as a second message type on the same \IEP connector,
+  with the same delivery semantics as an \InventoryEvent.
+  \item Every subscriber acknowledges a cumulative cursor; the CFE event store retains
+  each event until every active subscription has acknowledged past it plus a retention
+  window.
 \end{itemize}
 The number of stores and the number of subscribers are variation points
 (Section~\ref{sec:cc-variability}), not constraints.
@@ -223,11 +259,12 @@ author it independently:
 \subsubsection{Context diagram}
 Figure~\ref{fig:cc-context} fixes the scope of this view packet. The shaded box is the
 whole system of the primary presentation, the store systems and the \DC system taken as
-one. Outside it are the two external systems and the store and \DC managers, shown with
-the interactions the view cares about: sales records in, orders and confirmations
-exchanged with the supplier/ERP system, store inventory views out to the store manager,
-and master inventory and reports out to the \DC manager. The system-level context, with
-the exchanged-information table, is in Section~\ref{sec:goals-context}.
+one. Outside it are the two external systems, the POS system and the \AnalyticsClient, and
+the store and \DC managers, shown with the interactions the view cares about: sales records
+in as a one-way event stream, inventory events out to the \AnalyticsClient, store inventory
+views out to the store manager, and master inventory, reports and shipping orders out to
+the \DC manager. The system-level context, with the exchanged-information table, is in
+Section~\ref{sec:goals-context}.
 
 \begin{figure}[htbp]
 \centering
@@ -240,6 +277,6 @@ the exchanged-information table, is in Section~\ref{sec:goals-context}.
 The module decomposition view (Section~\ref{sec:module-view}) delivered in this draft
 shows the implementation units that realize these runtime components; the mapping between
 the two views is recorded in Section~\ref{sec:relations}, where no inconsistencies were
-found. The Allocation view, which will show the nodes these components run on, is deferred
-to the second draft and will map onto the element names fixed here.
+found. The Allocation view (Section~\ref{sec:allocation-view}) will show the nodes these
+components run on, mapped onto the element names fixed here.
 \endgroup

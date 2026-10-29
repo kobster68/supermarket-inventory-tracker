@@ -1,17 +1,33 @@
 @startuml
-' Class diagram decomposing the Common module's Domain Model.
+' Class diagram decomposing the Common module's Domain Model (Figure 8).
 ' Authored in issue #9. Renders through scripts/render-diagrams.sh.
+' The catalog uses the GoF Composite pattern: CatalogItem is the component, Product the
+' leaf, ProductFamily the composite, and totalValue() is the recursive operation.
 ' Every association carries multiplicities; the key names each relation type.
 !include style.puml
 title Domain model: class diagram of the Common module
 
 skinparam class {
-  BackgroundColor #f8fafc
-  BorderColor #475569
-  AttributeFontColor #334155
+  BackgroundColor #FFFFFF
+  BorderColor #203864
+  AttributeFontColor #15243B
 }
 skinparam nodesep 16
 skinparam ranksep 32
+
+together {
+  abstract class CatalogItem {
+    totalValue(): Money
+  }
+  class Product {
+    id
+    name
+    unitValue
+  }
+  class ProductFamily {
+    name
+  }
+}
 
 abstract class StockHolder {
   id
@@ -20,20 +36,9 @@ abstract class StockHolder {
 class Store
 class DistributionCenter
 
-class Product {
-  id
-  name
-  unitValue
-}
-
-class ProductFamily {
-  name
-}
-
 class InventoryLevel {
   quantity
 }
-
 class InventoryEvent {
   id
   sequence
@@ -41,34 +46,39 @@ class InventoryEvent {
   timestamp
   type
 }
-
 class ShippingOrder {
   id
+  status
 }
-
 class ShippingOrderLine {
   quantity
 }
-
-class Report {
-  generatedAt
+together {
+  class Report {
+    generatedAt
+  }
+  enum ReportType {
+    LowestStock
+    OverstockedItems
+    ProductFamilyTotalValue
+  }
 }
 
-enum ReportType {
-  LowestStock
-  OverstockedItems
-  ProductFamilyTotalValue
-}
+' ---- GoF Composite: the product catalog ----------------------------------------
+CatalogItem <|-- Product
+CatalogItem <|-- ProductFamily
+ProductFamily "0..*" o-- "0..*" CatalogItem : contains >
+note top of CatalogItem
+  GoF Composite pattern: CatalogItem is the component,
+  Product the leaf, ProductFamily the composite;
+  totalValue() is the recursive operation. A product may
+  belong to several families (many-to-many); the family
+  total-value report counts it once per family.
+end note
 
-' ---- generalization (is-a) ----------------------------------------------------
+' ---- holders and the stock they carry ------------------------------------------
 StockHolder <|-- Store
 StockHolder <|-- DistributionCenter
-
-' ---- product families: a composite nested to unbounded depth -------------------
-ProductFamily "0..1" o-- "0..*" ProductFamily : sub-families
-ProductFamily "0..1" o-- "0..* products" Product : groups >
-
-' ---- inventory held per holder per product -------------------------------------
 StockHolder "1" o-- "0..*" InventoryLevel : holds >
 InventoryLevel "0..*" --> "1" Product : of >
 
@@ -76,9 +86,9 @@ InventoryLevel "0..*" --> "1" Product : of >
 InventoryEvent "0..*" --> "1" StockHolder : source >
 InventoryEvent "0..*" --> "1" Product : product >
 
-' ---- shipping orders: lines of product + quantity, from a DC to a store --------
-DistributionCenter "1" --> "0..*" ShippingOrder : issues >
-ShippingOrder "0..*" --> "1" Store : to >
+' ---- shipping orders: raised at a store, fulfilled by the DC --------------------
+Store "1" --> "0..*" ShippingOrder : raises >
+ShippingOrder "0..*" --> "1" DistributionCenter : to >
 ShippingOrder "1" *-- "1..*" ShippingOrderLine : lines >
 ShippingOrderLine "0..*" --> "1" Product : item >
 

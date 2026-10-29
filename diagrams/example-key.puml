@@ -1,31 +1,51 @@
 @startuml
-' Toolchain proof and the shared legend style for the SAD.
-' Renders through scripts/render-diagrams.sh. It is a small, illustrative fragment,
-' not the delivered Components-and-Connectors view (that is authored in Slice 2).
+' Shared notation key for the SAD (Figure 2). Renders through scripts/render-diagrams.sh.
+' It is a small, illustrative fragment that shows every notation the views use:
+' the four element fills, the queue and store shapes, the provided-interface lollipop
+' (a port), and each connector type including the one-way event stream.
 !include style.puml
 title Diagram key: notation legend (illustrative C&C fragment)
 
 left to right direction
 skinparam componentStyle rectangle
+skinparam nodesep 12
+skinparam ranksep 30
 
-node "POS system" as POS #dae8fc
-component "Store Agent" as SA #d5e8d4
-queue "Outbox" as OB #e1d5e7
-component "Communications\nFront-End" as CFE #fff2cc
-component "Subscriber" as SUB #fff2cc
+actor "Manager" as MGR
+node "POS system" as POS #6FA8DC
+component "POS Adapter" as PA #6FA8DC
+component "Store Agent" as SA #93C47D
+database "Store-Local\nInventory" as SLI #8E7CC3
+queue "Outbox" as OB #8E7CC3
+component "Communications\nFront-End\n(pub-sub event bus)" as CFE #F1C232
+interface "IEP" as IEPIF
+component "Subscriber" as SUB #F1C232
 
-POS --> SA : <<external>>\nsales records
-SA --> OB : append\n(store-and-forward)
-OB --> CFE : publish\n[secure channel]
-CFE --> SUB : notify\n(n-ary publish-subscribe)
+MGR --> SA : <<request/reply>>\ninventory query
+POS --> PA : <<event stream>>\nsales records (one way)
+PA --> SA : <<local call>>\nInventory Events
+SA --> SLI : <<data access>>\napply, read
+SA --> OB : <<data access>>\nappend (ordered)
+CFE -- IEPIF
+OB --> IEPIF : <<pub-sub>> publish\nIEP / TLS 1.3 [secure]
+IEPIF --> OB : <<pub-sub>> acknowledge
+CFE --> SUB : <<pub-sub>> notify
+SUB --> CFE : <<pub-sub>> ack (cursor)
 
 legend right
 |= Notation |= Meaning |
-| rectangle, green fill | store-side runtime component |
-| rectangle, yellow fill | distribution-center runtime component |
-| queue shape, purple fill | durable, ordered persistent store |
-| node, blue fill | external system / boundary element |
-| solid arrow | connector; label names the protocol or interaction |
-| [secure channel] | a store-to-DC connector that is a secure channel |
+| green fill | store-side runtime component |
+| gold fill | distribution-center runtime component |
+| blue fill | external system or boundary element |
+| purple queue / database | durable, ordered persistent store |
+| stick figure | human role (manager), not a component |
+| circle on a stalk (lollipop) | a provided interface or port a connector attaches to |
+| solid arrow | connector; the label names the type and protocol |
+| <<pub-sub>> | the n-ary publish-subscribe connector (the IEP) |
+| <<event stream>> | a one-way stream of events (no reply) |
+| <<request/reply>> | a synchronous request and reply |
+| <<data access>> | a component reading or writing its own store |
+| <<local call>> | an in-process hand-off between a component and its boundary element |
+| [secure] | a store-to-DC network leg carried over TLS 1.3 with mutual certificates |
 endlegend
 @enduml
