@@ -24,8 +24,10 @@ CMI -> CFE : subscribe (resume)
 CMI -> CFE : resync (per-source lastKnownSequence)
 CFE --> CMI : watermarks per source\n(acceptedThrough, earliestRetained)
 note over CMI, CFE : compare per-source watermarks to find the gap
-CMI -> CFEDB : replay-from-sequence (read path, per source)
-CFEDB --> CMI : missing events in source order
+CMI -> CFE : replay-from-sequence (per source)
+CFE -> CFEDB : read retained events from the sequence (replay read path)
+CFEDB --> CFE : events in source order
+CFE --> CMI : missing events in source order
 note over CMI : apply idempotently; the master record is\ncurrent again within 30 min, store operation\nnever stops (AV-3)
 
 == Store node restart and rebuild (TEST-2) ==
