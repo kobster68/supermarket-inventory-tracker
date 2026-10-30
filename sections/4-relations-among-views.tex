@@ -1,14 +1,16 @@
 % Section 4 Relations Among Views
-% Owner: Slice 2 (issue #3); extended for the module decomposition view (issue #9).
+% Module mapping: Slice 2; deployment mapping: Slice 5 (issue #21).
 % The section heading is in main.tex.
-This draft contains two views: the module decomposition view --- the primary view,
-Section~\ref{sec:module-view} --- and the Components-and-Connectors view --- the key
-runtime view, Section~\ref{sec:cc-view}. The two are consistent. Every runtime component
+This draft contains three views: the module decomposition view --- the primary view,
+Section~\ref{sec:module-view} --- the Components-and-Connectors view --- the key
+runtime view, Section~\ref{sec:cc-view} --- and the Allocation view,
+Section~\ref{sec:allocation-view}. The tables below relate implementation units,
+runtime components and deployment nodes. Every internal runtime component
 of the C\&C view is realised by exactly one module of the module view, as
 Table~\ref{tab:view-mapping} records. The module view adds one module, Common, that is
 implementation-only --- the shared domain types and the \IEP library --- and so has no
-runtime component of its own. We found no inconsistency between the two views. The external
-\AnalyticsClient appears in both views but is external to the system: it uses the Common
+runtime component of its own. The external
+\AnalyticsClient appears across the views but is external to the system: it uses the Common
 module's \IEP library and realises no module of ours, so it does not appear in the mapping.
 
 \begin{table}[htbp]
@@ -28,6 +30,32 @@ Common & None --- shared code used by the other three modules\\\hline
 \label{tab:view-mapping}
 \end{table}
 
-The Allocation view (Section~\ref{sec:allocation-view}) will extend this mapping by placing
-each module and component on the node it is built and run on, and we will record any
-inconsistency it reveals here.
+Table~\ref{tab:component-node-mapping} extends that mapping with baseline deployment
+locations from Figure~\ref{fig:deployment}. Each store repeats the same placements;
+each listed component instance has one host. Common is shared code incorporated
+into the deployed services, not an additional runtime host.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.35\linewidth}|}
+\hline
+\textbf{Runtime components / state} & \textbf{Execution node / storage}\\\hline
+\POSAdapter, \StoreAgent & Store node, one pair per store ($\times N$)\\\hline
+\StoreLocalInventory, \Outbox & Store node's local durable storage ($\times N$)\\\hline
+\CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient & Single \DC node in the baseline\\\hline
+CFE event store, master inventory database & \DC node's local durable storage\\\hline
+External POS system & External POS node, one per store\\\hline
+\AnalyticsClient & External analytics node (future capability)\\\hline
+\end{tabularx}
+\caption{Component-to-node mapping from the C\&C view to the Allocation deployment view.}
+\label{tab:component-node-mapping}
+\end{table}
+
+The store's recovery log/snapshot is supporting state on store-local storage;
+source/subscription positions and processing checkpoints belong to the corresponding
+host's durable storage. These artifacts support the recovery behavior in
+Figure~\ref{fig:cc-seq-reconcile}; they add no separate application component.
+The WAN connects the store and \DC hosts inside the system boundary, while POS
+and analytics links cross that boundary. Separating \DC services onto additional
+hosts requires updating this baseline mapping and its capacity/failure assumptions.

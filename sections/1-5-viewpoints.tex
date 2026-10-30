@@ -1,5 +1,5 @@
 % Section 1.5 Viewpoint Definitions
-% Owner: Slice 2 (issue #3).
+% Owner: Slice 2 (issue #3); Allocation viewpoint added by Slice 5 (issue #21).
 \subsection{Viewpoint Definitions}
 \label{sec:viewpoints}
 
@@ -9,8 +9,8 @@ which stakeholders each viewpoint serves is presented with the stakeholder matri
 Section~\ref{sec:stakeholders}. The module decomposition viewpoint used by the primary
 view (Section~\ref{sec:module-view}) follows the SEI template's module decomposition style
 (``Software Architecture Document Template,'' \S\,Module Decomposition Viewpoint; Bass,
-Clements, and Kazman 10--11) and is not restated here; the Allocation viewpoint is
-deferred to the second draft.
+Clements, and Kazman 10--11) and is not restated here. The Allocation viewpoint
+below defines the deployment view delivered in Section~\ref{sec:allocation-view}.
 
 \subsubsection{Components-and-Connectors Viewpoint Definition}
 
@@ -66,3 +66,34 @@ that touches the runtime has a path through the view.
 The fourth edition of \emph{Software Architecture in Practice}, Chapter 22, and the SEI
 Views and Beyond Software Architecture Document template (Bass, Clements, and Kazman
 333--338; ``Software Architecture Document Template,'' \S\,Viewpoint Definitions).
+
+\subsubsection{Allocation Viewpoint Definition}
+\paragraph{Abstract.}
+The deployment viewpoint maps runtime software and persistent state to execution
+hosts and storage, with the network links connecting those hosts. It answers
+where each component runs and what remains available when a process, host or
+link fails (Bass, Clements, and Kazman 15).
+
+\paragraph{Stakeholders and concerns.}
+Store and \DC operators need placements, capacity obligations and recovery
+sources; store managers need local access during WAN outages; security reviewers
+need system boundaries and protected network paths.
+
+\paragraph{Elements, relations and properties.}
+Elements are execution/storage nodes, network links, runtime components and
+persistent stores. Nesting means allocated-to; links mean node-to-node
+communication or local storage access. Properties include multiplicity, workload,
+protocol protection, persistence and failure/recovery assumptions. Each internal
+runtime component has one baseline placement; external systems remain outside
+our boundary, while the store-to-\DC WAN remains inside it.
+
+\paragraph{Notation and evaluation.}
+We use a PlantUML deployment diagram with a key and a node catalog. Every C\&C
+component/store must appear once in the baseline component-to-node mapping;
+placements must agree with the diagram. Capacity checks include live and replay
+traffic. Failure cases identify surviving state and the authoritative recovery
+log without assuming redundant hardware that the deployment does not show.
+
+\paragraph{Viewpoint source.}
+The deployment structure in \emph{Software Architecture in Practice}, fourth
+edition (Bass, Clements, and Kazman 15), organized as a SEI view packet.
