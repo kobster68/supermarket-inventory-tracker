@@ -1,0 +1,77 @@
+@startuml
+' Slice 5 (issue #21): allocation of the C&C elements to deployment nodes.
+' Nesting allocates software/storage to a host; links connect nodes, not modules.
+!include style.puml
+
+title Allocation view: deployment
+top to bottom direction
+skinparam componentStyle rectangle
+skinparam nodesep 12
+skinparam ranksep 18
+
+node "External POS system\n(one per store)" as POS <<external>> #6FA8DC
+
+rectangle "Supermarket Inventory Tracking System" as SYSTEM {
+  node "Store node\n(one of N: 3 now, up to 10)" as STORE <<device>> #93C47D {
+    component "POS Adapter" as POSAD #93C47D
+    component "Store Agent\n(supervised process)" as SA #93C47D
+    node "Store-local durable storage" as STORE_DISK <<storage>> #8E7CC3 {
+      database "Store-Local\nInventory" as SLI #8E7CC3
+      queue "Outbox" as OB #8E7CC3
+      artifact "Recovery log / snapshot\nand applied positions" as LOCAL_LOG
+    }
+  }
+
+  cloud "WAN\n(internal system link)" as WAN #FFFFFF
+
+  node "DC node\n(single-host baseline)" as DC_HOST <<device>> #F1C232 {
+    component "Communications\nFront-End" as CFE #F1C232
+    component "DC Agent" as DCA #F1C232
+    component "Central Master\nInventory" as CMI #F1C232
+    component "Shipping-Order\nFulfillment" as SOF #F1C232
+    component "Store-Tracking\nClient" as STC #F1C232
+    component "Reporting Client" as RC #F1C232
+    node "DC-local durable storage" as DC_DISK <<storage>> #8E7CC3 {
+      database "CFE event store" as EVENT_LOG #8E7CC3
+      database "Master inventory\ndatabase" as MASTER_DB #8E7CC3
+      artifact "Source / subscription\npositions and checkpoints" as POSITIONS
+    }
+  }
+}
+
+node "External analytics node\n(future capability)" as ANALYTICS_HOST <<external>> #6FA8DC {
+  component "External Analytics Client" as ANALYTICS #6FA8DC
+}
+
+POS -down-> STORE : <<event stream>> sales records
+STORE -down- WAN : IEP / TLS 1.3\nmutual certificates
+WAN -down- DC_HOST : IEP / TLS 1.3\nmutual certificates
+DC_HOST -down- ANALYTICS_HOST : IEP / mutual TLS\nread-only subscription + acknowledgements
+
+' Hidden links only arrange the grid; nesting already shows every allocation.
+' Storage ownership and failure assumptions are in the node catalog, not repeated
+' as long access labels and notes that would shrink the printed diagram.
+POSAD -[hidden]right- SA
+SA -[hidden]down- STORE_DISK
+SLI -[hidden]right- OB
+OB -[hidden]right- LOCAL_LOG
+CFE -[hidden]right- DCA
+CMI -[hidden]right- SOF
+STC -[hidden]right- RC
+CFE -[hidden]down- CMI
+CMI -[hidden]down- STC
+RC -[hidden]down- DC_DISK
+EVENT_LOG -[hidden]right- MASTER_DB
+MASTER_DB -[hidden]right- POSITIONS
+
+legend bottom
+|= Notation |= Meaning |
+| rectangle | system boundary (includes WAN) |
+| green / gold node | store / DC execution host |
+| blue node | external system |
+| nesting | allocated to enclosing host / storage |
+| purple database / queue | durable local data |
+| artifact | recovery state, not a separate component |
+| solid link | node-to-node communication |
+endlegend
+@enduml
