@@ -3,11 +3,11 @@
 ' Nesting allocates software/storage to a host; links connect nodes, not modules.
 !include style.puml
 
-title Allocation view: deployment of stores and the distribution center
-left to right direction
+title Allocation view: deployment
+top to bottom direction
 skinparam componentStyle rectangle
-skinparam nodesep 18
-skinparam ranksep 35
+skinparam nodesep 12
+skinparam ranksep 18
 
 node "External POS system\n(one per store)" as POS <<external>> #6FA8DC
 
@@ -16,25 +16,25 @@ rectangle "Supermarket Inventory Tracking System" as SYSTEM {
     component "POS Adapter" as POSAD #93C47D
     component "Store Agent\n(supervised process)" as SA #93C47D
     node "Store-local durable storage" as STORE_DISK <<storage>> #8E7CC3 {
-      database "Store-Local Inventory" as SLI #8E7CC3
+      database "Store-Local\nInventory" as SLI #8E7CC3
       queue "Outbox" as OB #8E7CC3
-      artifact "Local recovery log / snapshot\n(includes applied sequence positions)" as LOCAL_LOG
+      artifact "Recovery log / snapshot\nand applied positions" as LOCAL_LOG
     }
   }
 
   cloud "WAN\n(internal system link)" as WAN #FFFFFF
 
   node "DC node\n(single-host baseline)" as DC_HOST <<device>> #F1C232 {
-    component "Communications Front-End\n(pub-sub event bus)" as CFE #F1C232
+    component "Communications\nFront-End" as CFE #F1C232
     component "DC Agent" as DCA #F1C232
-    component "Central Master Inventory" as CMI #F1C232
-    component "Shipping-Order Fulfillment" as SOF #F1C232
-    component "Store-Tracking Client" as STC #F1C232
+    component "Central Master\nInventory" as CMI #F1C232
+    component "Shipping-Order\nFulfillment" as SOF #F1C232
+    component "Store-Tracking\nClient" as STC #F1C232
     component "Reporting Client" as RC #F1C232
     node "DC-local durable storage" as DC_DISK <<storage>> #8E7CC3 {
-      database "CFE event store\n(accepted messages and replay history)" as EVENT_LOG #8E7CC3
-      database "Master inventory database\n(inventory projection)" as MASTER_DB #8E7CC3
-      artifact "Subscription / source positions\nand processing checkpoints" as POSITIONS
+      database "CFE event store" as EVENT_LOG #8E7CC3
+      database "Master inventory\ndatabase" as MASTER_DB #8E7CC3
+      artifact "Source / subscription\npositions and checkpoints" as POSITIONS
     }
   }
 }
@@ -43,39 +43,35 @@ node "External analytics node\n(future capability)" as ANALYTICS_HOST <<external
   component "External Analytics Client" as ANALYTICS #6FA8DC
 }
 
-POS --> STORE : <<event stream>>\nsales records to POS Adapter
-STORE -- WAN : <<network>> IEP\npublish / acceptance / replay / resync
-WAN -- DC_HOST : <<network>> IEP\nTLS 1.3, mutual certificates
-DC_HOST -- ANALYTICS_HOST : <<network>> IEP / mutual TLS\nsubscribe, delivery, cumulative acknowledgements\nread-only data scope
+POS -down-> STORE : <<event stream>> sales records
+STORE -down- WAN : IEP / TLS 1.3\nmutual certificates
+WAN -down- DC_HOST : IEP / TLS 1.3\nmutual certificates
+DC_HOST -down- ANALYTICS_HOST : IEP / mutual TLS\nread-only subscription + acknowledgements
 
-' Local links describe storage placement/access, not the full runtime event flow.
-POSAD -[hidden]down- SA
-SA --> STORE_DISK : <<local storage>>\natomic inventory / log / Outbox writes
-CFE --> DC_DISK : <<local storage>>\npersist messages, positions; read replay
-CMI --> DC_DISK : <<local storage>>\ncommit inventory and processing cursor
-
-note bottom of STORE
-  WAN failure leaves store-local processing available
-  while services and storage survive and capacity remains.
-  Local recovery history is retained separately from
-  acknowledged entries pruned from the Outbox.
-end note
-
-note bottom of DC_HOST
-  One host is the initial deployment, not redundant failover.
-  Durable storage survives process restart; storage loss
-  requires backup recovery. Recovery behavior is in the C&C view.
-end note
+' Hidden links only arrange the grid; nesting already shows every allocation.
+' Storage ownership and failure assumptions are in the node catalog, not repeated
+' as long access labels and notes that would shrink the printed diagram.
+POSAD -[hidden]right- SA
+SA -[hidden]down- STORE_DISK
+SLI -[hidden]right- OB
+OB -[hidden]right- LOCAL_LOG
+CFE -[hidden]right- DCA
+CMI -[hidden]right- SOF
+STC -[hidden]right- RC
+CFE -[hidden]down- CMI
+CMI -[hidden]down- STC
+RC -[hidden]down- DC_DISK
+EVENT_LOG -[hidden]right- MASTER_DB
+MASTER_DB -[hidden]right- POSITIONS
 
 legend bottom
 |= Notation |= Meaning |
-| enclosing rectangle | system boundary; WAN is inside it |
-| green / gold device node | store / DC execution host |
-| blue external node | external system, outside our boundary |
-| component nested in a node | software allocated to that host |
-| purple storage node, database or queue | durable data allocated to local storage |
-| artifact | recovery/supporting state, not an extra C&C component |
-| solid network link | node-to-node communication; label names protocol |
-| local-storage arrow | access to storage on the same host |
+| rectangle | system boundary (includes WAN) |
+| green / gold node | store / DC execution host |
+| blue node | external system |
+| nesting | allocated to enclosing host / storage |
+| purple database / queue | durable local data |
+| artifact | recovery state, not a separate component |
+| solid link | node-to-node communication |
 endlegend
 @enduml
