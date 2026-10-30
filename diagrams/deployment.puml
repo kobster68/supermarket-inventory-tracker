@@ -1,0 +1,81 @@
+@startuml
+' Slice 5 (issue #21): allocation of the C&C elements to deployment nodes.
+' Nesting allocates software/storage to a host; links connect nodes, not modules.
+!include style.puml
+
+title Allocation view: deployment of stores and the distribution center
+left to right direction
+skinparam componentStyle rectangle
+skinparam nodesep 18
+skinparam ranksep 35
+
+node "External POS system\n(one per store)" as POS <<external>> #6FA8DC
+
+rectangle "Supermarket Inventory Tracking System" as SYSTEM {
+  node "Store node\n(one of N: 3 now, up to 10)" as STORE <<device>> #93C47D {
+    component "POS Adapter" as POSAD #93C47D
+    component "Store Agent\n(supervised process)" as SA #93C47D
+    node "Store-local durable storage" as STORE_DISK <<storage>> #8E7CC3 {
+      database "Store-Local Inventory" as SLI #8E7CC3
+      queue "Outbox" as OB #8E7CC3
+      artifact "Local recovery log / snapshot\n(includes applied sequence positions)" as LOCAL_LOG
+    }
+  }
+
+  cloud "WAN\n(internal system link)" as WAN #FFFFFF
+
+  node "DC node\n(single-host baseline)" as DC_HOST <<device>> #F1C232 {
+    component "Communications Front-End\n(pub-sub event bus)" as CFE #F1C232
+    component "DC Agent" as DCA #F1C232
+    component "Central Master Inventory" as CMI #F1C232
+    component "Shipping-Order Fulfillment" as SOF #F1C232
+    component "Store-Tracking Client" as STC #F1C232
+    component "Reporting Client" as RC #F1C232
+    node "DC-local durable storage" as DC_DISK <<storage>> #8E7CC3 {
+      database "CFE event store\n(accepted messages and replay history)" as EVENT_LOG #8E7CC3
+      database "Master inventory database\n(inventory projection)" as MASTER_DB #8E7CC3
+      artifact "Subscription / source positions\nand processing checkpoints" as POSITIONS
+    }
+  }
+}
+
+node "External analytics node\n(future capability)" as ANALYTICS_HOST <<external>> #6FA8DC {
+  component "External Analytics Client" as ANALYTICS #6FA8DC
+}
+
+POS --> STORE : <<event stream>>\nsales records to POS Adapter
+STORE -- WAN : <<network>> IEP\npublish / acceptance / replay / resync
+WAN -- DC_HOST : <<network>> IEP\nTLS 1.3, mutual certificates
+DC_HOST -- ANALYTICS_HOST : <<network>> IEP / mutual TLS\nsubscribe, delivery, cumulative acknowledgements\nread-only data scope
+
+' Local links describe storage placement/access, not the full runtime event flow.
+POSAD -[hidden]down- SA
+SA --> STORE_DISK : <<local storage>>\natomic inventory / log / Outbox writes
+CFE --> DC_DISK : <<local storage>>\npersist messages, positions; read replay
+CMI --> DC_DISK : <<local storage>>\ncommit inventory and processing cursor
+
+note bottom of STORE
+  WAN failure leaves store-local processing available
+  while services and storage survive and capacity remains.
+  Local recovery history is retained separately from
+  acknowledged entries pruned from the Outbox.
+end note
+
+note bottom of DC_HOST
+  One host is the initial deployment, not redundant failover.
+  Durable storage survives process restart; storage loss
+  requires backup recovery. Recovery behavior is in the C&C view.
+end note
+
+legend bottom
+|= Notation |= Meaning |
+| enclosing rectangle | system boundary; WAN is inside it |
+| green / gold device node | store / DC execution host |
+| blue external node | external system, outside our boundary |
+| component nested in a node | software allocated to that host |
+| purple storage node, database or queue | durable data allocated to local storage |
+| artifact | recovery/supporting state, not an extra C&C component |
+| solid network link | node-to-node communication; label names protocol |
+| local-storage arrow | access to storage on the same host |
+endlegend
+@enduml
