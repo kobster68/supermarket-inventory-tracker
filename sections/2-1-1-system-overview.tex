@@ -4,21 +4,27 @@
 \label{sec:system-overview}
 
 The system tracks the inventory of a regional supermarket chain. The chain has three
-stores and one distribution center (\DC) today, and it will grow to ten stores. The
-\DC ships product to the stores.
+stores and one distribution center (\DC) today, and it will grow to ten stores. Each
+store has a store system, and the \DC has a central system. A wide-area network (WAN)
+link connects each store system to the central system. This link is part of our system.
 
-Each store records its sales in real time. The point-of-sale (POS) system in the store
-sends each sale to the system, which turns it into an \InventoryEvent. A store emits up
-to 100 events per second. The store keeps its own copy of its inventory, the
-\StoreLocalInventory, so that store managers can read and change it when the network to
-the \DC is down.
+Inventory changes start when a cashier scans a product that a shopper buys. Each scan at
+the point-of-sale (POS) system makes a sales event, and a store makes up to 100 events
+per second. Each sales event decreases the store inventory. When the store inventory of a
+product falls to its minimum stock quantity, the store system creates a shipping order to
+the \DC. The store manager confirms the order, and the \DC fulfils it by shipping more
+product to the store. Thus, each shipping order starts at a store.
 
-The \DC keeps the \CentralMasterInventory, the master record of the stock in every
-store and in the \DC. The store events reach the \DC through the \CFE, which also sends
-them to a variable number of other clients. From minimum stock quantities and current
-sales, the \DC makes shipping orders. It sends purchase and shipping orders to the
-external supplier/ERP system.
+We assume that the \DC always has enough stock to satisfy each shipping order. How product
+reaches the \DC is outside the scope of this system.
+
+The store system keeps the store inventory, so that the store manager can read and change
+it when the link to the \DC is down. The central system keeps the master record of the
+stock in every store and in the \DC. The central system also sends the store events to a
+variable number of other clients. An external analytics client is a future client of this
+type.
 
 Products belong to product families, and a family can contain other families to any
-depth. Managers ask for three types of report: the lowest-stock items, the overstocked
-items, and the total value of a product family.
+depth. A product may belong to more than one family, and the family-value report counts it
+once per family it is in. Managers ask for three types of report: the lowest-stock items,
+the overstocked items, and the total value of a product family.
