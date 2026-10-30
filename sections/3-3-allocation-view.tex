@@ -1,4 +1,123 @@
 % Section 3.3: Allocation (deployment) view. Owner: Slice 5 (issue #21).
 \subsection{Allocation View}
 \label{sec:allocation-view}
-\todo{To be completed in Slice 5 (issue \#21): the deployment view --- store nodes, the DC node, the WAN link, and the mapping of every runtime component onto a node.}
+
+\subsubsection{View description}
+We use the deployment style to allocate the runtime elements of
+Section~\ref{sec:cc-view} to execution hosts, storage and communication links.
+Deployment structures relate software to its hardware environment (Bass, Clements,
+and Kazman 15). This packet shows one store repeated across the chain and one
+\DC host. It identifies which failures affect local service and which durable
+state supports recovery; runtime exchanges remain in the C\&C view.
+
+\subsubsection{Primary presentation}
+Figure~\ref{fig:deployment} shows the baseline deployment. Each component is nested
+inside its execution host, and persistent state is nested inside that host's
+storage. The WAN is inside our system boundary: it connects the store and \DC
+nodes, even though another organization may operate the physical network.
+The POS system and \AnalyticsClient are outside the boundary.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{deployment}
+\caption{Allocation view --- deployment of store and distribution-center components, persistent state and network links.}
+\label{fig:deployment}
+\end{figure}
+
+\subsubsection{Element catalog}
+\paragraph{Nodes and links.}
+Table~\ref{tab:allocation-nodes} records placements and capacity obligations.
+Rates are design requirements for provisioning and load tests, not measurements
+of selected hardware. We do not prescribe processor, disk or operating-system
+models without those tests.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.19\linewidth}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Node/link} & \textbf{Allocation and properties}\\\hline
+Store node ($\times N$) & $N=3$ initially, up to 10. Hosts \POSAdapter and \StoreAgent; local storage holds \StoreLocalInventory, \Outbox and recovery history. Sustain 100 events/s locally (\scnref{PERF-1}); retain at least 180{,}000 queued events for the 30-minute WAN sizing assumption, plus orders and headroom. Support 2{,}000 events/s of catch-up while live sales continue (\scnref{PERF-4}).\\\hline
+\DC node & Hosts \CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient and \ReportingClient. Local storage holds the CFE event store, master inventory database, source/subscription positions and checkpoints. Absorb 1{,}000 live store events/s (\scnref{PERF-2}), plus \DC events, orders, replay and fan-out. Provision additional ingress/storage capacity for each concurrently recovering store's \scnref{PERF-4} burst.\\\hline
+WAN link & Internal store-to-\DC communication path for the \IEP. TLS 1.3 with mutual certificates protects both directions (\scnref{SEC-2}). Provision for live traffic and recovery; byte-rate sizing depends on message size. Disconnection delays central updates without requiring local transactions to wait.\\\hline
+External POS node & One external system per store; sales enter through the \POSAdapter as a one-way stream. Its implementation and storage remain outside our deployment.\\\hline
+External analytics node & Hosts the future \AnalyticsClient outside our boundary. Uses authenticated \IEP subscription/replay and cumulative acknowledgements with read-only data scope (\scnref{INT-1}); it has no direct access to inventory storage.\\\hline
+\end{tabularx}
+\caption{Allocation-view node catalog: placements, storage and capacity properties.}
+\label{tab:allocation-nodes}
+\end{table}
+
+\paragraph{Persistence and failure assumptions.}
+Durable storage survives process restarts; local transactions atomically commit
+inventory changes and outgoing records. The store's retained local log and a
+consistent snapshot are authoritative for rebuilding \StoreLocalInventory.
+Pruning acknowledged \Outbox entries does not remove that recovery history.
+At the \DC, the CFE event store is authoritative for replaying accepted messages
+into the master projection. The master database commits its applied cursor with
+its updates. Source/subscription positions and duplicate-detection state also
+survive restarts; memory or socket receipt alone is insufficient.
+
+A WAN outage leaves store reads and updates available while the store process,
+disk and capacity survive (\scnref{AV-1}). The 30-minute buffer calculation is a
+sizing assumption, not a guarantee that the network returns within 30 minutes.
+The separate local-access requirement is at least 99\% availability and no
+individual local-inventory outage longer than 30 minutes. A supervised restart
+and local rebuild must restore usable access within that limit, including
+detection time; \scnref{TEST-2} measures the interval. If a host cannot restart,
+replacement and durable-state recovery are required; supervision alone does not
+repair hardware.
+
+A \CentralMasterInventory process failure leaves the \CFE accepting messages;
+restart and replay must restore the current master within 30 minutes
+(\scnref{AV-3}). Failure of the whole \DC host affects all co-located services:
+stores buffer locally, but central acceptance and reports pause. The single-host
+baseline supplies no automatic host failover. Disk failure requires a consistent
+backup and subsequent retained history; permanent loss of every durable copy
+cannot meet the no-loss guarantee. Recovery assumptions and backup procedures
+must therefore be validated along with restart and replay.
+
+\paragraph{Interfaces, behavior and constraints.}
+Node-to-node messages obey the \IEP (Section~\ref{sec:iep}); local persistence
+uses the owning service's transactional storage interface. Each internal C\&C
+component/data store has exactly one baseline placement, with one instance per
+store where applicable. External systems are not allocated to our hosts.
+Recovery compares per-source watermarks before replay, as shown in
+Figure~\ref{fig:cc-seq-reconcile}; this packet identifies the surviving storage
+used by that behavior rather than defining another recovery protocol.
+
+\subsubsection{Context diagram}
+The enclosing boundary and external nodes in Figure~\ref{fig:deployment} also
+serve as this packet's context diagram. Its external interactions match
+Figure~\ref{fig:cc-context}: POS sales enter the store, and the \AnalyticsClient
+receives messages from the \DC. Manager roles use the store and \DC applications
+already shown in the C\&C view; they do not introduce additional deployment hosts.
+In particular, the store-to-\DC WAN is internal to the system, not a third
+external system.
+
+\subsubsection{Variability mechanisms}
+\begin{itemize}[nosep]
+\item \emph{Store count.} Add a store-node instance, its local storage,
+\StoreAgent configuration, source identity and certificates. The component
+placements repeat; capacity must cover the added traffic (\scnref{SCAL-1}).
+\item \emph{\DC host count.} The baseline co-locates central services on one
+host. A later deployment may separate the \CFE, master and client services across
+hosts, preserving their logical interfaces and storage ownership. Such a change
+requires an updated mapping, secured inter-host links and capacity/failure tests;
+splitting services alone does not establish redundant failover.
+\end{itemize}
+
+\subsubsection{Architecture background}
+We keep store inventory and outgoing messages on store-local storage so WAN
+failure does not interrupt a local transaction. Co-locating the initial \DC
+services simplifies deployment and local persistence, but creates a shared host
+failure boundary and competition for CPU, disk and network capacity. The workload
+in Section~\ref{sec:analysis-results} must be tested with replay and reporting,
+not just steady ingestion. We distinguish process recovery from host/storage
+recovery so the deployment does not imply availability that it cannot supply.
+
+\subsubsection{Related view packets}
+Section~\ref{sec:cc-view} defines the runtime components and recovery behavior;
+Section~\ref{sec:module-view} defines the implementation units that realize them.
+Section~\ref{sec:relations} collects cross-view mappings. The same component
+identities are used here; local recovery logs, checkpoints and subscription state
+are supporting persistent state rather than additional application components.
