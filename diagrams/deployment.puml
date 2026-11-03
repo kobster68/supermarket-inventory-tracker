@@ -7,7 +7,7 @@ title Allocation view: deployment
 top to bottom direction
 skinparam componentStyle rectangle
 skinparam nodesep 12
-skinparam ranksep 18
+skinparam ranksep 8
 
 node "External POS system\n(one per store)" as POS <<external>> #6FA8DC
 

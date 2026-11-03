@@ -74,12 +74,12 @@ hosts and storage, with the network links connecting those hosts. It answers
 where each component runs and what remains available when a process, host or
 link fails (Bass, Clements, and Kazman 15).
 
-\paragraph{Stakeholders and concerns.}
+\paragraph{Stakeholders and their concerns addressed.}
 Store and \DC operators need placements, capacity obligations and recovery
 sources; store managers need local access during WAN outages; security reviewers
 need system boundaries and protected network paths.
 
-\paragraph{Elements, relations and properties.}
+\paragraph{Elements, relations, properties, and constraints.}
 Elements are execution/storage nodes, network links, runtime components and
 persistent stores. Nesting means allocated-to; links mean node-to-node
 communication or local storage access. Properties include multiplicity, workload,
@@ -87,8 +87,11 @@ protocol protection, persistence and failure/recovery assumptions. Each internal
 runtime component has one baseline placement; external systems remain outside
 our boundary, while the store-to-\DC WAN remains inside it.
 
-\paragraph{Notation and evaluation.}
-We use a PlantUML deployment diagram with a key and a node catalog. Every C\&C
+\paragraph{Language(s) to model or represent conforming views.}
+We use a PlantUML deployment diagram with a key and a node catalog.
+
+\paragraph{Applicable evaluation and consistency criteria.}
+Every C\&C
 component/store must appear once in the baseline component-to-node mapping;
 placements must agree with the diagram. Capacity checks include live and replay
 traffic. Failure cases identify surviving state and the authoritative recovery
