@@ -58,8 +58,9 @@ OB -[hidden]right- LOCAL_LOG
 CFE -[hidden]right- DCA
 CMI -[hidden]right- SOF
 STC -[hidden]right- RC
-' Leave DC rows vertically unconstrained: links between nested nodes can force
-' large empty ranks when Graphviz also positions the host's external connections.
+' Keep the lower DC rows stacked without forcing the CFE-to-CMI vertical gap.
+CMI -[hidden]down- STC
+RC -[hidden]down- DC_DISK
 EVENT_LOG -[hidden]right- MASTER_DB
 MASTER_DB -[hidden]right- POSITIONS
 
