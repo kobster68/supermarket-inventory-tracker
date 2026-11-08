@@ -1,32 +1,56 @@
 % Section 2.2.2 Analysis Results
-% Owner: Slice 4 (issue #5).
+% Owner: Slice 4 (issue #20).
 \subsubsection{Analysis Results}
 \label{sec:analysis-results}
 
-We derive the following estimates from the quality requirements in the project
-brief. These are workload and capacity calculations, not measured performance results.
+These workload calculations size the selected design and define test inputs; they
+are not measured performance results.
 
 \paragraph{Local availability.}
-For an observation period \(T\), 99\% availability allows at most \(0.01T\) downtime.
-Over an illustrative 30-day period, this is
-\(30 \times 24 \times 60 \times 0.01 = 432\) minutes, or 7 hours 12 minutes.
-Table~4.1 uses a 90-day period and lists 21 hours 36 minutes for 99\% availability
-(Bass, Clements, and Kazman 53). Our observation period and downtime-accounting rules
-remain to be agreed. Independently, the brief permits no individual local-inventory
-outage longer than 30 minutes; a total budget does not override that cap.
+For an observation period \(T\), 99\% availability permits \(0.01T\) downtime
+(Bass et al. 53): an illustrative 30 days permits 432 minutes.
+The observation period and accounting rules require agreement. The separate maximum
+individual local-inventory outage remains 30 minutes; a total budget does not override it.
 
 \paragraph{Store buffer capacity.}
-At 100 events/s, an illustrative 30-minute WAN interruption generates
-\(100 \times 30 \times 60 = 180{,}000\) additional events per store.
-The \Outbox needs capacity for that backlog, plus existing queued events, operating
-headroom and storage overhead. A byte allocation requires the persisted event size.
-The 30-minute WAN duration is a sizing assumption, not a maximum network outage
-established by the brief's separate local-access limit.
+At 100 inventory events per second, a 30-minute WAN interruption produces
+\(B=100\times1{,}800=180{,}000\) buffered inventory events per store.
+For persisted event size \(s\), reserve at least \(Bs\) bytes, plus existing queued
+work, confirmed orders, storage overhead and headroom. Separate local recovery
+history also needs space. This WAN duration is a sizing assumption, not a network
+repair guarantee or a local-access interruption.
 
-\paragraph{Central throughput.}
-Three stores produce up to \(3 \times 100 = 300\) new store events/s; ten produce
-\(10 \times 100 = 1{,}000\). The \CFE and central processing path must also account
-for \DC events, retries, subscriber fan-out and replay traffic. To drain a backlog,
-effective processing capacity must exceed the ongoing arrival rate. We therefore
-need workload validation with recovery traffic, not only a steady 1,000 events/s
-input test; these calculations alone establish no achieved throughput.
+\paragraph{Post-outage catch-up (\scnref{PERF-4}).}
+For full catch-up including continuing arrivals \(\lambda=100\), clearing \(B\)
+within \(D=600\) seconds needs effective service rate
+\(\mu\geq\lambda+B/D=400\) events per second. Equal arrival and service rates never
+drain the queue. With nine other stores at normal rate, one store recovering at this
+minimum needs 1{,}300 store events per second at the \DC.
+The selected capacity target is 2{,}000 events per second per recovering store
+(Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}). Counting this as that store's
+combined live/replay inventory rate, \(k\) simultaneous recovering stores require
+\((10-k)100+k(2{,}000)\): 2{,}900 for one, or 20{,}000 for ten, before \DC events,
+orders, retries and fan-out. If 2{,}000 denotes replay traffic alone, add another
+100 events per second for each recovering store. The full-catch-up model is a sizing assumption; the delivery milestone
+ending \scnref{PERF-4}'s ten minutes still needs explicit agreement.
+
+\paragraph{Central work and retention.}
+Three stores produce 300 new inventory events per second; ten produce 1{,}000.
+Ten consumers following all sources can require 10{,}000 deliveries per second at
+that live rate, plus acknowledgements. Local filtering does not remove this fan-out
+cost. The \CFE stores one accepted message with subscription progress, rather than
+requiring a separate log copy per subscriber. Even with prompt processing
+acknowledgements, its 60-minute post-acknowledgement window represents
+\(1{,}000\times3{,}600=3{,}600{,}000\) live inventory records. Budget their persisted
+sizes, identities, indexes and checkpoints, plus unacknowledged history and recovery
+bursts. The window starts after the last required cumulative acknowledgement;
+disconnected active subscriptions pin unread history, so 60 minutes is not a maximum
+retention duration (Section~\ref{sec:iep}). Capacity exhaustion requires backpressure.
+
+\paragraph{Validation and timing alignment.}
+Acceptance, first delivery and completed consumer processing are distinct milestones.
+\scnref{PERF-2} and the \IEP must agree on clock boundaries and per-event versus
+percentile limits before those timings become acceptance criteria. The calculations
+above establish neither latency nor successful end-to-end recovery. Load and fault
+tests must combine live traffic, replay, report queries and consumer acknowledgements,
+and verify no committed event is lost or applied twice.
