@@ -1,137 +1,189 @@
 % Section 2.2.1 Architectural Approaches
-% Owner: Slice 4 (issue #5).
+% Owner: Slice 4 (issue #20).
 \subsubsection{Architectural Approaches}
 \label{sec:approaches}
 
-We use a \POSAdapter to translate sales records for the \StoreAgent, which saves an
-inventory change and its \Outbox event in one local transaction. This realises the
-Transactions tactic (Bass, Clements, and Kazman 61). The \Outbox forwards committed
-events to the \CFE and retains unacknowledged events for Retry (60), preserving their
-event IDs. Subscribers applying inventory updates must atomically save their state
-changes, duplicate-detection records and contiguous per-source processing progress.
-Repeated delivery can then have one inventory effect. Retry limits and escalation
-must retain undelivered records rather than discard committed changes.
+The \POSAdapter translates sales for the \StoreAgent, whose local transaction commits
+inventory, source sequence and \Outbox event together: Transactions (Bass, Clements,
+and Kazman 61). The \Outbox retries committed events with unchanged IDs until
+acknowledged: Retry (60). Escalation retains undelivered records.
 
-The \CFE persists events before returning an \Acknowledgement, then distributes
-them to \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient and
-\ReportingClient. The \DCAgent publishes the \DC's own stock events; the
-\SupplierGateway exchanges orders and receipts with the external supplier/ERP system.
-Publish--subscribe realises Use an intermediary (107; 123), supporting a variable
-client population. The \IEP and \InventoryEvent definitions form a shared local
-standard, realising Adhere to standards (107). An acknowledgement confirms durable
-central acceptance, not completion by every subscriber; the central event store must
-retain the history needed for subscriber recovery.
+The \CFE atomically persists each message, its identity and source position before
+returning an \texttt{accepted} \Acknowledgement and distributing it to subscribers.
+A known retry receives another acknowledgement without a second log entry.
+A \StoreAgent raises a
+\ShippingOrder when stock reaches its configured minimum; the store manager confirms
+it before the \Outbox queues it for delivery. \ShippingOrderFulfillment receives the
+confirmed order and presents it to the \DC manager for fulfilment. When dispatch
+changes warehouse stock, the \DCAgent publishes an \InventoryEvent through the
+\CFE for \CentralMasterInventory to apply.
+
+The Publish-Subscribe pattern (Bass, Clements, and Kazman 129--130) uses the \CFE
+as its event bus and realises Use an intermediary (107; 123). The \IEP and
+message definitions form a shared local standard: Adhere to standards (107).
+The publisher saves
+\texttt{acceptedThrough} before pruning its \Outbox. Each subscriber sends cumulative
+\texttt{appliedThrough} only after its effects, duplicate records and cursor commit
+together; irrelevant messages still advance its durable processing position.
+
+\paragraph{Routing and retention.}
+Subscriptions select authorized source streams; consumers filter locally. Dropping
+family topics avoids maintaining routing when product-family membership changes,
+but increases fan-out, network traffic and client filtering. Consumers acknowledge
+their progress even through messages they ignore.
+The \CFE prunes a message only after every relevant active subscription acknowledges
+through its sequence, then a further 60 minutes from the last required acknowledgement
+(Section~\ref{sec:iep}). With no relevant subscription, the window starts at acceptance.
+Disconnected subscriptions pin unread history. Slow consumers therefore increase
+storage and can delay publishers through backpressure; the timer cannot expire events
+still owed to them.
 
 \paragraph{Alternatives and trade-offs.}
-We prefer local commitment followed by asynchronous delivery over requiring a
-successful synchronous \DC call before each local update: synchronous confirmation
-would make store operation depend on the WAN and central service. We also prefer an
-\Outbox over a full broker in every store, because the current local responsibility
-is durable forwarding, while subscription management and fan-out are centralised.
-These choices reduce local messaging infrastructure and duplicated routing logic,
-but introduce queues, retry traffic and temporary differences between local and
-central inventory. The delivery argument assumes surviving durable records, eventual
-communication recovery and sufficient storage; buffering does not establish an
-unconditional guarantee under permanent isolation or storage loss.
+Synchronous \DC confirmation would make local updates depend on the WAN.
+Local commitment and asynchronous forwarding remove that dependency; central fan-out
+avoids a full broker per store. Costs are queues, retries and temporary central
+staleness. Delivery assumes recoverable records, sufficient capacity and eventual reconnection.
 
-\paragraph{Local recovery.}
-For the local-service outage limit, we propose supervised \StoreAgent restart as an
-initial level of Escalating restart (60--61). The restarted agent reopens the recovered
-\StoreLocalInventory and resumes pending \Outbox transmissions with their original
-IDs. A local snapshot is a recovery checkpoint only when committed changes after it
-can also be recovered; pending outgoing events alone are not a complete inventory
-history. Detection, restart and restoration of usable local access must together
-meet the 30-minute limit. Further escalation and recovery from machine or storage
-failure remain to be specified and validated.
+\paragraph{Recovery decisions.}
+The C\&C and Allocation views (Sections~\ref{sec:cc-view} and~\ref{sec:allocation-view})
+select supervised \StoreAgent restart and rebuild from its local log/snapshot,
+preserved separately from pruned \Outbox transmissions. Failure detection through
+restored access must meet the 30-minute local-outage limit.
+\CentralMasterInventory restarts from its committed cursor and retained CFE history.
+The single \DC host needs replacement/backup recovery for host or storage failure.
+\opResync compares durable positions before replay: expired identities require
+reconciliation; missing history requires a consistent snapshot/backup.
+Recovery never resets stock or reuses source sequences.
 
-\paragraph{Scenario tactics.}
-The following rows cover every scenario ID. Parenthesised page numbers refer to
-Bass, Clements, and Kazman, fourth edition. Rows marked \emph{proposed} or
-\emph{options} describe refinements to allocate and validate, rather than demonstrated
-behaviour. Repeated headers keep the table groups readable.
+\paragraph{Scenario tactics and patterns.}
+The tables map every scenario to mechanisms and costs. Tactic page numbers refer to
+Bass, Clements, and Kazman, fourth edition. The (H,M) mechanisms are selected in the
+named views; capacity and recovery figures remain targets to validate. Other rows
+marked \emph{proposed} or \emph{options} identify remaining refinements.
 
 \begingroup
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3pt}
 \renewcommand{\arraystretch}{1.0}
-\begin{tacticstable}
+\noindent\textbf{Named patterns and supporting tactics.}\par
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.28\linewidth}|>{\raggedright\arraybackslash}p{0.23\linewidth}|>{\raggedright\arraybackslash}X|}
+\hline
+\textbf{Scenarios} & \textbf{Pattern and source} & \textbf{Supporting tactic / realisation}\\\hline
+\scnref{AV-2}, \scnref{PERF-2}, \scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-1}, \scnref{INT-2}
+& Publish-Subscribe (Bass et al. 129--130)
+& Use an intermediary: the \CFE event bus separates publishers and consumers (Section~\ref{sec:cc-view}); fan-out adds central work and dependency.\\\hline
+\scnref{MOD-2}, \scnref{PERF-3}
+& Composite (Gamma et al. 163)
+& Encapsulate: Common's \texttt{CatalogItem}, \texttt{ProductFamily} and \texttt{Product} support recursive value queries (Figure~\ref{fig:domain-model}); traversal must guard cycles and repeated products.\\\hline
+\end{tabularx}
+
+\par\medskip\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{AV-1}}
-  {Graceful degradation (60)}
-  {\StoreAgent serves \StoreLocalInventory; \Outbox buffers during WAN loss.}
+  {Graceful degradation (60); Escalating restart (60--61)}
+  {Local inventory and \Outbox buffering; supervised \StoreAgent rebuild from its local log (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
   {Central state lags; storage capacity limits disconnected operation.}
 \tacticrow{\scnref{AV-2}}
   {Transactions (61); Retry (60)}
-  {Atomic local update/append; \CFE durable acknowledgement; same-ID retries.}
-  {Extra persistence, traffic and duplicate tracking.}
+  {Same-ID retries; atomic state/progress; publisher \texttt{accepted} and subscriber cumulative \texttt{applied} acks (Section~\ref{sec:iep}).}
+  {Persistence and duplicate tracking; \CFE history waits for all required acks plus 60 minutes.}
 \tacticrow{\scnref{AV-3}}
   {Transactions (61)}
-  {Proposed atomic \CentralMasterInventory state/progress save; \opReplay through \CFE.}
-  {Retained history and a central recovery delay.}
+  {\CentralMasterInventory commits state/cursor together; restart and \opReplay use history held until all required cumulative acks plus 60 minutes (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Replay delay; disconnected consumers pin history and can trigger backpressure.}
+\end{tabularx}\par\medskip
+
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{PERF-1}}
   {Introduce concurrency (141)}
-  {Proposed independent local processing and \Outbox transmission, preserving source order.}
-  {Coordination and resource overhead; validate 100 events/s.}
+  {Local transactions overlap ordered \Outbox transmission (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Coordination and resource overhead; validate 100 events per second.}
 \tacticrow{\scnref{PERF-2}}
   {Introduce concurrency (141); Bound queue sizes (142)}
-  {Proposed concurrent central processing with explicit queue limits.}
-  {Contention; full-queue policy and recovery headroom required.}
+  {Independent consumer delivery; bounded admission returns \texttt{BUSY} while publishers retain pending events (Section~\ref{sec:iep}).}
+  {Contention and backpressure; recovery needs spare capacity.}
 \tacticrow{\scnref{PERF-3}}
   {Increase efficiency of resource usage (141)}
-  {Proposed indexed inventory queries and arbitrary-depth family traversal.}
-  {Index storage, update overhead and query complexity.}
-\end{tacticstable}
+  {Proposed indexed inventory queries; Common's recursive Composite traversal (Figure~\ref{fig:domain-model}).}
+  {Index maintenance, storage and correct shared-product counting.}
+\tacticrow{\scnref{PERF-4}}
+  {Introduce concurrency; Increase resources (141)}
+  {\Outbox: 180{,}000-event WAN buffer; catch-up capacity 2{,}000 events per second while live sales continue (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Local storage and added WAN/\DC headroom; replay competes with live work.}
+\end{tabularx}\par\medskip
 
-\begin{tacticstable}
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{SEC-1}}
   {Authenticate actors; Authorize actors (174)}
   {Options for manager/agent identities, inventory access checks and restricted database accounts.}
   {Identity infrastructure and permission administration.}
 \tacticrow{\scnref{SEC-2}}
   {Encrypt data (175); Verify message integrity (174); Authenticate actors (174)}
-  {TLS on store--\DC legs, as the runtime view specifies; endpoint authentication and authorization mechanisms remain open.}
-  {Key/credential management and cryptographic overhead.}
+  {Store--\DC \IEP uses TLS 1.3 and mutual certificates with provisioned trust (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Certificate provisioning/revocation and cryptographic overhead.}
 \tacticrow{\scnref{SEC-3}}
   {Authorize actors (174)}
   {Proposed operation and inventory-scope checks in \StoreAgent and \CentralMasterInventory access paths.}
   {Accurate scope assignments and consistent enforcement.}
 \tacticrow{\scnref{SCAL-1}}
   {Defer binding (configuration time, 124)}
-  {Proposed store identities and connection settings supplied at deployment.}
+  {One configured \StoreAgent, registered source identity and certificates per new store (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
   {Provisioning work; central throughput needs separate validation.}
 \tacticrow{\scnref{SCAL-2}}
   {Use an intermediary (107)}
   {\CFE registers conforming subscribers through \opSubscribe at runtime.}
   {Each client adds distribution work and possible backlog.}
-\end{tacticstable}
+\end{tabularx}\par\medskip
 
-\begin{tacticstable}
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{USE-1}}
   {Maintain task model (201)}
-  {Proposed order-task context and guidance; manager-facing entry point to assign.}
-  {Interaction-state logic; minimal-training criterion to define.}
+  {Order context and confirmation through \StoreAgent before \Outbox publication.}
+  {Interaction-state logic; validate the minimal-training criterion.}
 \tacticrow{\scnref{USE-2}}
   {Maintain task model (201)}
   {Proposed \ReportingClient guidance based on report type, inputs and scope.}
   {Per-report interaction logic and user evaluation.}
+\end{tabularx}\par\medskip
+
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{MOD-1}}
   {Use an intermediary (107; 123)}
   {New client uses \IEP without changing existing publishers.}
   {Shared-contract compatibility and extra subscriber load.}
 \tacticrow{\scnref{MOD-2}}
   {Encapsulate (106; 123)}
-  {Proposed shared hierarchy operations over recursive product-family relationships.}
-  {Traversal and cycle-validation complexity.}
+  {Common's Composite exposes \texttt{CatalogItem.totalValue()} for leaves and families (Figure~\ref{fig:domain-model}).}
+  {Traversal, cycle checks and shared-product counting.}
 \tacticrow{\scnref{INT-1}}
   {Use an intermediary; Adhere to standards (107)}
-  {\POSAdapter and \SupplierGateway map external exchanges to defined internal contracts.}
-  {Mapping maintenance; identifiers, units and meaning must agree.}
+  {The future \AnalyticsClient receives authorized events over the shared \IEP.}
+  {Contract compatibility, client provisioning and additional fan-out work.}
 \tacticrow{\scnref{INT-2}}
   {Use an intermediary (107)}
   {\CFE subscription interface serves a variable number of conforming clients.}
   {Central dependency and fan-out resource costs.}
-\end{tacticstable}
+\end{tabularx}\par\medskip
 
-\begin{tacticstable}
+\noindent
+\begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.09\linewidth}|>{\raggedright\arraybackslash}p{0.22\linewidth}|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}p{0.20\linewidth}|}
+\hline
+\textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{TEST-1}}
   {Specialized interfaces (188); Sandbox (189)}
   {Proposed isolated test instance with controlled message/acknowledgement loss and observable outcomes.}
@@ -140,14 +192,13 @@ behaviour. Repeated headers keep the table groups readable.
   {Specialized interfaces (188); Sandbox (189)}
   {Proposed isolated test instance with failure injection and timing to usable inventory access.}
   {Instrumentation overhead; real recovery time must be measured.}
-\end{tacticstable}
+\end{tabularx}\par\medskip
 \endgroup
 
-\paragraph{Decisions to reconcile.}
-We still need restart escalation and node/storage recovery, full-\Outbox behaviour,
-and a retention/replay policy covering subscriber interruptions. Peer authentication
-and role/scope policy remain options. The manager-facing order interaction needs
-an owner without assuming a new approval rule; external order dispatch also needs a
-duplicate-safe handoff. Portability must cover persistence
-and restart supervision as well as external-system adapters. The term \emph{failover}
-in \scnref{TEST-2} must be aligned with the restart-based recovery being proposed.
+\paragraph{Validation and remaining risks.}
+The selected recovery, buffering, mutual TLS and store-provisioning mechanisms
+still need timed recovery and load tests. Full \Outbox admission rejects an update
+atomically; central admission returns \texttt{BUSY} before accepting excess work
+(Section~\ref{sec:iep}). Credential/scope administration, backup restoration and the
+physical dispatch handoff require validation. The \scnref{TEST-2} wording must describe
+the restart/recovery mechanism supplied by the deployment.

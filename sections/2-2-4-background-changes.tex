@@ -1,10 +1,12 @@
 % Section 2.2.4 Summary of Background Changes Reflected in Current Version
-% Owner: Slice 4 (issue #5). Marked not applicable; Slice 4 writes the reason.
+% Owner: Slice 4 (issue #20).
 \subsubsection{Summary of Background Changes Reflected in Current Version}
 \label{sec:background-changes}
-\begin{notapplicable}
-This is our first documented architectural baseline, so there is no earlier baseline
-against which to summarize changes in requirements or design context. Draft revisions
-are recorded in Section~\ref{sec:doc-control}; subsequent baselines will summarize
-material background changes here.
-\end{notapplicable}
+The first-draft review removed supplier/ERP integration and portability from scope.
+We assume sufficient \DC stock. Orders now originate in the store, are confirmed by
+its manager and reach \ShippingOrderFulfillment at the \DC. The future
+\AnalyticsClient replaces the former external integration in the system context.
+Source streams and local filtering replace family topics; cumulative subscriber
+acknowledgements govern replay retention. This draft also addresses the (H,M)
+scenarios and adds the \scnref{PERF-4} catch-up analysis.
+Section~\ref{sec:doc-control} records integrated draft milestones.
