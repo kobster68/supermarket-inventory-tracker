@@ -1,0 +1,54 @@
+name: Build tactic
+
+# Build and test the tactic code (tactic/) on every push and pull request that touches it.
+# Path filters work per workflow, not per job, so the code has its own workflow; build.yml
+# ignores the same paths so a code-only change does not rebuild the document. scripts/lint.sh
+# is listed too because this workflow runs it.
+#
+# No check is required on main today. If checks are made required later, add an always-running
+# gate check first and require only that: a path-filtered workflow that is skipped never
+# reports, and a required check that never reports blocks the pull request.
+
+on:
+  push:
+    branches: [ '**' ]
+    paths:
+      - 'tactic/**'
+      - '.github/workflows/tactic.yml'
+      - 'scripts/lint.sh'
+  pull_request:
+    paths:
+      - 'tactic/**'
+      - '.github/workflows/tactic.yml'
+      - 'scripts/lint.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository (full history, for the commit-trailer check)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: 'tactic/**/pom.xml'
+
+      - name: Build and test
+        # Compiles every module, runs the tests, and builds the executable jars.
+        working-directory: tactic
+        run: mvn -B verify
+
+      - name: Hygiene lint (planning references and commit trailers only)
+        run: bash scripts/lint.sh --hygiene-only
+
+      - name: README dependencies match the Maven build
+        run: bash tactic/scripts/check-readme-dependencies.sh

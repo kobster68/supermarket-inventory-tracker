@@ -20,7 +20,8 @@ references.bib        Structured source for the references (see "Bibliography" b
 sections/             One file per SEI section, numbered in template order
 diagrams/             PlantUML sources: style.puml (shared style) + example-key.puml (the notation key)
 scripts/              build.sh, render-diagrams.sh, lint.sh
-.github/              CI workflow and the pull-request template
+.github/              CI workflows and the pull-request template
+tactic/               Running code for the Store Inventory tactic (Java 21, Maven); see tactic/README.md
 ```
 
 ## Build it locally
@@ -76,6 +77,12 @@ rebuilt on every merge to `main`, not a submission; submissions use a dated rele
 (for example `first-draft`), which stays manual. The
 **Build SAD** check should be marked a required status check on pull requests in the
 repository's branch-protection settings.
+
+The tactic code in `tactic/` has its own workflow, **Build tactic**
+(`.github/workflows/tactic.yml`), which runs `mvn -B verify`, `scripts/lint.sh --hygiene-only`
+and a README dependency check on pushes and pull requests that touch `tactic/`. **Build SAD**
+skips changes that touch only `tactic/` and that workflow. Because a skipped workflow never
+reports a check, making either check required needs an always-running gate check first.
 
 ## Bibliography
 

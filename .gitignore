@@ -32,3 +32,17 @@ diagrams/*.eps
 .vscode/
 *.swp
 *~
+
+# Tactic code (tactic/): Maven build output, SQLite data files with their journal, WAL and
+# shared-memory side files, and the demo's data and log folders
+tactic/**/target/
+tactic/**/*.db
+tactic/**/*.db-journal
+tactic/**/*.db-wal
+tactic/**/*.db-shm
+tactic/**/*.sqlite
+tactic/**/*.sqlite-journal
+tactic/**/*.sqlite-wal
+tactic/**/*.sqlite-shm
+tactic/demo-data/
+tactic/demo-logs/
