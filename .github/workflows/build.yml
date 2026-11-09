@@ -2,12 +2,19 @@ name: Build SAD
 
 # Compile the architecture document on every push (any branch) and every pull
 # request, so slice authors get the PDF artifact on each push. Reviewers read the
-# uploaded main.pdf, not the diff.
+# uploaded main.pdf, not the diff. Changes that touch only the tactic code (tactic/ and its
+# workflow, tactic.yml) are built by tactic.yml instead and skip this workflow.
 
 on:
   push:
     branches: [ '**' ]
+    paths-ignore:
+      - 'tactic/**'
+      - '.github/workflows/tactic.yml'
   pull_request:
+    paths-ignore:
+      - 'tactic/**'
+      - '.github/workflows/tactic.yml'
 
 permissions:
   contents: read

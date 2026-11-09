@@ -3,6 +3,10 @@
 #
 #   scripts/lint.sh           hygiene + element-name + diagram-render checks
 #   scripts/lint.sh --main    the above, plus: reject any TODO / \todo marker in sections/
+#   scripts/lint.sh --hygiene-only
+#                             only the hygiene check and a check that no commit carries an
+#                             AI co-author trailer; needs no LaTeX sources or plantuml (the
+#                             tactic code workflow runs this mode)
 #
 # The skeleton passes the default mode (its stubs still carry \todo markers). The
 # --main mode is the stricter check for the final integration, when no TODO marker
@@ -15,6 +19,8 @@ cd "$REPO_ROOT"
 
 MAIN=0
 [ "${1:-}" = "--main" ] && MAIN=1
+HYGIENE_ONLY=0
+[ "${1:-}" = "--hygiene-only" ] && HYGIENE_ONLY=1
 
 status=0
 
@@ -59,6 +65,35 @@ elif [ "$hygiene_rc" -eq 0 ]; then
   status=1
 else
   echo "    ok"
+fi
+
+# --hygiene-only: the hygiene check above, then the commit-trailer check, and stop. The
+# document checks below are skipped. The trailer pattern is assembled from fragments for the
+# same reason as the hygiene patterns. Human co-authors are allowed; AI ones are not.
+if [ "$HYGIENE_ONLY" -eq 1 ]; then
+  echo "==> Commits: no AI co-author trailers"
+  ai_trailer='^[[:space:]]*co-authored-by:.*(cl''aude|anthr''opic|open''ai|chat''gpt|co''pilot|co''dex)'
+  if ! commits=$(git rev-list HEAD 2>&1); then
+    echo "LINT FAIL: cannot list commits:" >&2
+    printf '%s\n' "$commits" >&2
+    status=1
+  else
+    trailer_ok=1
+    for c in $commits; do
+      if git show -s --format=%B "$c" | grep -qiE "$ai_trailer"; then
+        echo "LINT FAIL: commit $(git show -s --format='%h %s' "$c") has an AI co-author trailer" >&2
+        trailer_ok=0
+        status=1
+      fi
+    done
+    [ "$trailer_ok" -eq 1 ] && echo "    ok ($(printf '%s\n' "$commits" | grep -c .) commit(s) checked)"
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "lint: FAILED" >&2
+    exit 1
+  fi
+  echo "lint: passed"
+  exit 0
 fi
 
 # (b) Element-name check. The list is derived from macros.tex: every \newelement
