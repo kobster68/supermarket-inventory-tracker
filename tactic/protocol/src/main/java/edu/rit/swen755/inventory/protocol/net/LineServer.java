@@ -10,13 +10,15 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A listener on {@code 127.0.0.1} that serves each accepted connection on its own thread.
- * {@link #close()} stops at once: it closes the listener and every open connection and interrupts
- * every thread it started. A process's crash and its clean stop both use it; they differ only in
- * whether the process then closes its database.
+ * {@link #close()} stops at once: it closes the listener and every open connection, interrupts
+ * every thread it started, and waits briefly for those threads to leave, so the port is free when it
+ * returns. A process's crash and its clean stop both use it; they differ only in whether the process
+ * then closes its database.
  */
 public final class LineServer implements AutoCloseable {
 
@@ -34,6 +36,9 @@ public final class LineServer implements AutoCloseable {
 
     /** How long a control connection may stay silent before it is closed. */
     private static final int CONTROL_READ_TIMEOUT_MILLIS = 5_000;
+
+    /** How long {@link #close()} waits, in all, for the threads it started to leave. */
+    private static final long CLOSE_WAIT_NANOS = TimeUnit.SECONDS.toNanos(2);
 
     private final String name;
     private final ServerSocket server;
@@ -95,6 +100,33 @@ public final class LineServer implements AutoCloseable {
         }
         for (Thread t : threads) {
             t.interrupt();
+        }
+        awaitThreads();
+    }
+
+    /**
+     * Waits, up to {@link #CLOSE_WAIT_NANOS} in all, for the threads this server started to leave.
+     * Closing a socket that another thread is blocked on only marks it closed; the JDK releases the
+     * file descriptor, and with it the port, once that thread leaves the blocked call. Until the
+     * accept thread has left {@code accept()}, the listener still holds its port and a restart on
+     * the same port can fail with "Address already in use".
+     */
+    private void awaitThreads() {
+        long deadline = System.nanoTime() + CLOSE_WAIT_NANOS;
+        for (Thread t : threads) {
+            if (t == Thread.currentThread()) {
+                continue;
+            }
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return;
+            }
+            try {
+                TimeUnit.NANOSECONDS.timedJoin(t, remaining);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
