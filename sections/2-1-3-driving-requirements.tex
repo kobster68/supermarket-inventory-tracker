@@ -41,9 +41,9 @@ names the parts of our solution.
   {A fault in the WAN link between a store and the \DC, which is part of the system's own deployment (Section~\ref{sec:allocation-view}).}
   {An omission fault: the store loses its WAN link to the \DC.}
   {The store-to-\DC link and the store system.}
-  {Normal operation.}
+  {Normal operation; the store-to-\DC link is down for 30 minutes.}
   {The store system keeps serving reads and updates against the store inventory, logs the fault, and keeps each outbound event for delivery when the link returns.}
-  {The store inventory stays readable and updatable at least 99\% of the time; this single outage lasts no more than 30 minutes; no buffered event is lost when the link returns.}
+  {The store's inventory stays readable and updatable throughout; no outgoing event is lost; after the link returns every buffered event reaches the central system. The separate limit on a local-inventory service outage, no single outage over 30 minutes, is unchanged.}
 
 \scenario{AV-2}
   {The store-to-\DC link or the central system (transient fault).}
@@ -74,8 +74,8 @@ names the parts of our solution.
   {All stores send events at full rate: 1{,}000 events per second at the \DC.}
   {The central system and its consumers.}
   {Maximum scale: ten stores and one \DC.}
-  {The central system stores each event, confirms receipt to the store, and delivers the event to every central consumer. Each consumer confirms that it received the event.}
-  {1{,}000 events per second sustained; each store gets its confirmation within 1 second; an event counts as delivered when every consumer has confirmed it, and each event is delivered within 5 seconds; no backlog at the \DC grows.}
+  {The central system durably stores each event, confirms acceptance to the store, and delivers it to every consumer; each consumer confirms its processing progress.}
+  {1{,}000 events per second sustained. Measured from the moment a store first transmits an event: durable central acceptance is confirmed to the store within 1 second at the 95th percentile, and every required consumer has processed and acknowledged the event within 5 seconds at the 95th percentile, including central queueing and delivery time. No queue at the central system grows without bound.}
 
 \scenario{PERF-3}
   {A \DC manager.}
@@ -91,7 +91,7 @@ names the parts of our solution.
   {The store system, the store-to-\DC link and the central system.}
   {Immediately after a 30-minute store-to-\DC outage.}
   {The store system delivers the buffered backlog to the \DC and continues to record live sales.}
-  {The buffered backlog is delivered to the \DC within 10 minutes while live sales continue to be recorded at the normal rate; 0 events lost.}
+  {within 10 minutes of the link returning, every event buffered during the outage has been processed and acknowledged by every required consumer, while live sales continue to be recorded at the normal rate and are not lost.}
 
 \scenario{SEC-1}
   {An unauthenticated person or process, inside or outside the network.}
@@ -191,7 +191,7 @@ names the parts of our solution.
 
 \scenario{TEST-2}
   {A tester.}
-  {Stops a store system or cuts the WAN link to measure detection and failover.}
+  {Stops a store system or cuts the WAN link to measure detection and recovery.}
   {The store system and its failure detection.}
   {Test environment.}
   {The harness records the time of the failure, the detection and the restored access.}
@@ -230,7 +230,7 @@ Modifiability & New client type & \scnref{MOD-1} New client type & (M, L)\\\clin
 Integrability & External clients & \scnref{INT-1} External analytics client & (M, M)\\\cline{2-4}
  & Alerting clients & \scnref{INT-2} Variable alerting clients & (M, L)\\\hline
 Testability & Delivery under loss & \scnref{TEST-1} Delivery under message loss & (M, M)\\\cline{2-4}
- & Failover timing & \scnref{TEST-2} Failover timing & (M, M)\\\hline
+ & Recovery timing & \scnref{TEST-2} Recovery timing & (M, M)\\\hline
 \end{tabularx}
 \caption{Draft utility tree: (business value, technical risk).}
 \label{tab:utility-tree}
