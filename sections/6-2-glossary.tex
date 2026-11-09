@@ -7,9 +7,10 @@
 \label{sec:glossary}
 
 \begingroup
-\small
+\footnotesize
 \clubpenalty=10000
 \widowpenalty=10000
+\begin{multicols}{2}
 \begin{description}[style=unboxed,leftmargin=1em,labelindent=0pt,itemsep=2pt,parsep=0pt]
 \item[Store Agent] The store component that applies sales and stock changes locally, queues their events in the Outbox, and raises shipping orders at minimum stock for store-manager confirmation; recovery from durable local state must restore inventory access within the 30-minute outage limit.
 \item[Store-Local Inventory] The store's own inventory copy, updated locally first so access can continue during communication outages, subject to surviving local services and storage capacity.
@@ -46,4 +47,5 @@
 \item[Module] An implementation unit of the system's code structure; the element type of the module decomposition view, related to other modules by is-part-of (decomposition) and uses (dependency).
 \item[Module decomposition view] The primary view of code modules and their relationships.
 \end{description}
+\end{multicols}
 \endgroup
