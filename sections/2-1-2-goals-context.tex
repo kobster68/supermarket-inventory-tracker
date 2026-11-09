@@ -33,7 +33,7 @@ external system.
 \hline
 \textbf{External system} & \textbf{Comes in} & \textbf{Goes out} & \textbf{How often}\\\hline
 POS system (one per store) & A one-way stream of sales events, one for each product scan. & Nothing. & Each scan; up to 100 events per second per store.\\\hline
-\AnalyticsClient (future) & Confirmation that it received each event. & Inventory events, over the exchange protocol. & Each event, after the client connects.\\\hline
+\AnalyticsClient (future) & Acknowledgements confirming durable event-processing progress. & Inventory events, over the exchange protocol. & Each event, after the client connects.\\\hline
 \end{tabularx}
 \caption{Information exchanged with each external system.}
 \label{tab:external-exchange}
