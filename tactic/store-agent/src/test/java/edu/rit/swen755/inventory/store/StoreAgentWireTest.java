@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
+import edu.rit.swen755.inventory.protocol.ErrorReply;
 import edu.rit.swen755.inventory.protocol.Product;
 import edu.rit.swen755.inventory.protocol.RetrySettings;
+import edu.rit.swen755.inventory.protocol.SaleRecorded;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import edu.rit.swen755.inventory.protocol.StatusReply;
 import edu.rit.swen755.inventory.protocol.StatusRequest;
@@ -17,15 +18,23 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The Store Agent over its real ports: starts, reports what it bound, answers STATUS. */
+/** The Store Agent over its real ports: starts, reports what it bound, records sales, answers STATUS. */
 class StoreAgentWireTest {
 
     @TempDir
     Path data;
+
+    /** A free port with nothing listening, so the store's sender never reaches a real fault link. */
+    private int noLink;
+
+    @BeforeEach
+    void pickAnUnusedLinkPort() throws Exception {
+        noLink = TestPorts.unused();
+    }
 
     @Test
     void defaultsAreTheDocumentedPortsFolderAndSource() {
@@ -67,7 +76,9 @@ class StoreAgentWireTest {
     @Test
     void durableStatusSurvivesAStopAndACrash() throws Exception {
         StatusReply first;
-        try (StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS)) {
+        try (StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
+                PointOfSale pos = new PointOfSale(store.boundPorts().get("sales"))) {
+            pos.sell(Product.P4, 3);
             first = status(store);
         }
         StoreAgent reopened = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
@@ -83,15 +94,81 @@ class StoreAgentWireTest {
     }
 
     @Test
-    @Disabled("TODO(Godson, #30): enable once the store records sales")
-    void restartAfterASaleDoesNotReseedStock() {
-        // Send SALE|P1|2 to the sales port and read OK, stop the store, start it again on the same
-        // folder: stock.P1 is still 999998 and created is 1.
-        fail("not written yet");
+    void aSaleChangesStockQueuesOneEventAndRepliesWithItsIdentity() throws Exception {
+        try (StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
+                PointOfSale pos = new PointOfSale(store.boundPorts().get("sales"))) {
+            SaleRecorded first = pos.sell(Product.P1, 2);
+            SaleRecorded second = pos.sell(Product.P3, 1);
+
+            assertEquals(1, first.sequence());
+            assertEquals(2, second.sequence());
+            assertNotEquals(first.eventId(), second.eventId());
+            StatusReply status = status(store);
+            assertEquals(2, status.number("created"));
+            assertEquals(0, status.number("acceptedThrough"));
+            assertEquals(2, status.number("pending"));
+            assertEquals(999_998, status.number("stock.P1"));
+            assertEquals(1_000_000, status.number("stock.P2"));
+            assertEquals(999_999, status.number("stock.P3"));
+        }
+    }
+
+    @Test
+    void invalidSalesLinesAreRefusedWithAnErrorAndChangeNothing() throws Exception {
+        try (StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
+                PointOfSale pos = new PointOfSale(store.boundPorts().get("sales"))) {
+            for (String line : List.of("SALE|P9|1", "SALE|P1|0", "SALE|P1|4", "SALE|P1", "hello", "STATUS")) {
+                assertInstanceOf(ErrorReply.class, pos.send(line), line);
+            }
+            assertEquals(1, pos.sell(Product.P2, 3).sequence(), "the connection still takes sales");
+            StatusReply status = status(store);
+            assertEquals(1, status.number("created"));
+            assertEquals(1_000_000, status.number("stock.P1"));
+            assertEquals(999_997, status.number("stock.P2"));
+        }
+    }
+
+    @Test
+    void restartAfterASaleDoesNotReseedStock() throws Exception {
+        try (StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
+                PointOfSale pos = new PointOfSale(store.boundPorts().get("sales"))) {
+            pos.sell(Product.P1, 2);
+        }
+        try (StoreAgent restarted = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS)) {
+            StatusReply status = status(restarted);
+            assertEquals(999_998, status.number("stock.P1"));
+            assertEquals(1, status.number("created"));
+            assertEquals(1, status.number("pending"));
+        }
+    }
+
+    /**
+     * The one test that reaches past the wire: the test-only crash hook fails the sale transaction
+     * after the stock update and before the Outbox insert. Neither change may survive.
+     */
+    @Test
+    void aSaleThatFailsBetweenTheStockUpdateAndTheOutboxInsertLeavesNeitherChange() throws Exception {
+        StoreAgent store = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS, true);
+        try (PointOfSale pos = new PointOfSale(store.boundPorts().get("sales"))) {
+            assertInstanceOf(ErrorReply.class, pos.send("SALE|P1|2"));
+            StatusReply status = status(store);
+            assertEquals(0, status.number("created"));
+            assertEquals(1_000_000, status.number("stock.P1"));
+        } finally {
+            store.crash();
+        }
+        try (StoreAgent reopened = StoreAgent.start(config(0, 0), RetrySettings.DEFAULTS);
+                PointOfSale pos = new PointOfSale(reopened.boundPorts().get("sales"))) {
+            StatusReply status = status(reopened);
+            assertEquals(0, status.number("created"));
+            assertEquals(0, status.number("pending"));
+            assertEquals(1_000_000, status.number("stock.P1"));
+            assertEquals(1, pos.sell(Product.P1, 2).sequence(), "no sequence number was used up");
+        }
     }
 
     private StoreAgentConfig config(int sales, int control) {
-        return new StoreAgentConfig(sales, control, 7201, data.resolve("store"), "store-1");
+        return new StoreAgentConfig(sales, control, noLink, data.resolve("store"), "store-1");
     }
 
     private static StatusReply status(StoreAgent store) throws Exception {
