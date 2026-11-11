@@ -37,8 +37,28 @@ seeded random source.
 
 ### 4.3 Communications Front-End (owner: Kobe LaPrade)
 
-TODO(Kobe, #31): the acceptance rule and its transaction, re-acknowledging duplicates, refusing
-gaps, and the sender to the master.
+- **Transaction boundary.** The event-log row and its source's accepted-through position commit
+  in one SQLite transaction. Only after commit does the CFE send
+  `ACK|accepted|source|through`; an acknowledgement therefore promises an event that survives a
+  CFE restart. A failed insert or cursor update rolls back both changes and gets an error reply.
+- **Acceptance rule.** Accept only the next contiguous sequence for each source. An event ID
+  already held, or a sequence at or below accepted-through, is re-acknowledged without another
+  row and counted in `duplicatesReacked`. An event beyond a gap is not stored; the reply gives
+  the current accepted-through. Sources have independent positions, and STATUS reads all known
+  sources from SQLite (plus the configured source even before its first event).
+- **Forwarding (Retry).** Forward the original stored events to the master in sequence order
+  within each source, with at most 100 outstanding events across the connection. Only cumulative
+  `ACK|applied` replies for events sent on that connection advance durable delivered-through;
+  stale, duplicate, wrong-kind, unknown-source and ahead-of-sent acknowledgements cannot advance
+  it. Repeated acknowledgements do not trigger resends or reset the progress timeout. An idle
+  connection gives newly sent events a fresh 500 ms timeout.
+- **Failure and restart.** A disconnect or progress timeout closes the connection, waits a
+  backoff (100 ms doubling to 2 s, with up to 20% jitter), then reconnects and resends after each
+  source's durable delivered-through with the same event IDs. After 10 consecutive failures the
+  master link is logged DOWN and probing continues at the capped backoff; only an advancing
+  applied acknowledgement resets failures and marks it UP. Events remain in the log throughout.
+  On restart, the CFE reopens its log and positions and resumes from delivered-through + 1,
+  accepting store traffic independently of master availability.
 
 ### 4.4 Central Master Inventory (owner: Mike Andrews)
 
