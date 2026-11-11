@@ -1,7 +1,12 @@
 package edu.rit.swen755.inventory.cfe;
 
+import edu.rit.swen755.inventory.protocol.Ack;
+import edu.rit.swen755.inventory.protocol.AckKind;
 import edu.rit.swen755.inventory.protocol.ErrorReply;
+import edu.rit.swen755.inventory.protocol.LineCodec;
+import edu.rit.swen755.inventory.protocol.MalformedLineException;
 import edu.rit.swen755.inventory.protocol.Message;
+import edu.rit.swen755.inventory.protocol.Publish;
 import edu.rit.swen755.inventory.protocol.RetrySettings;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import edu.rit.swen755.inventory.protocol.StatusReply;
@@ -23,47 +28,57 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class Cfe implements RunningProcess {
 
     private final CfeConfig config;
-    private final RetrySettings retry;
     private final CfeDatabase database;
     /** Informational: duplicates re-acknowledged without a new row since this instance started. */
     private final AtomicLong duplicatesReacked = new AtomicLong();
-    /** Informational: events resent to the master since this instance started. */
-    private final AtomicLong retriesSent = new AtomicLong();
-    /** Informational: state of the link to the master. */
-    private volatile String linkState = StatusKeys.LINK_UP;
+    private final MasterSender sender;
     private LineServer listener;
     private LineServer control;
 
     private Cfe(CfeConfig config, RetrySettings retry, CfeDatabase database) {
         this.config = config;
-        this.retry = Objects.requireNonNull(retry, "retry");
         this.database = database;
+        this.sender = new MasterSender(database, retry, config.masterPort());
     }
 
     /** Opens (or creates) the database, then binds both ports. */
     public static Cfe start(CfeConfig config, RetrySettings retry) throws IOException, SQLException {
+        Objects.requireNonNull(retry, "retry");
         Cfe cfe = new Cfe(config, retry, CfeDatabase.open(config.dataDir()));
         try {
             cfe.listener = LineServer.start("cfe-listen", config.listenPort(), cfe::serveStore);
             cfe.control = LineServer.control("cfe-control", config.controlPort(), cfe::answer);
+            cfe.sender.start();
         } catch (IOException e) {
             cfe.crash();
             throw e;
         }
-        // TODO(Kobe, #31): start the sender to the master on config.masterPort(): send every event
-        // after deliveredThrough in sequence order, at most retry.window() in flight, resend on
-        // retry.ackTimeout() with backoff, mark linkState DOWN after retry.linkDownAfter() failed
-        // attempts, and advance deliveredThrough on each ACK|applied.
         return cfe;
     }
 
     private void serveStore(LineConnection store) throws IOException {
-        // TODO(Kobe, #31): for each PUBLISH, store it only if it is the next contiguous sequence for
-        // its source (event log row and acceptedThrough in one transaction); re-acknowledge an event
-        // already held without a new row; refuse an event beyond a gap. After the commit, reply
-        // ACK|accepted|source|acceptedThrough in every case. Until then lines are read and discarded.
-        while (store.readLine() != null) {
-            // discarded
+        String line;
+        while ((line = store.readLine()) != null) {
+            Message request;
+            try {
+                request = LineCodec.decode(line);
+            } catch (MalformedLineException e) {
+                store.send(ErrorReply.of(e.getMessage()));
+                continue;
+            }
+            if (!(request instanceof Publish event)) {
+                store.send(ErrorReply.of("the CFE accepts only PUBLISH on this port"));
+                continue;
+            }
+            try {
+                CfeDatabase.Acceptance accepted = database.accept(event);
+                if (accepted.duplicate()) {
+                    duplicatesReacked.incrementAndGet();
+                }
+                store.send(new Ack(AckKind.ACCEPTED, event.source(), accepted.through()));
+            } catch (SQLException e) {
+                store.send(ErrorReply.of("event not accepted: " + e.getMessage()));
+            }
         }
     }
 
@@ -71,8 +86,8 @@ public final class Cfe implements RunningProcess {
         if (request instanceof StatusRequest) {
             Map<String, String> values = new LinkedHashMap<>(database.durableStatus(config.source()));
             values.put(StatusKeys.Cfe.DUPLICATES_REACKED, Long.toString(duplicatesReacked.get()));
-            values.put(StatusKeys.Cfe.RETRIES_SENT, Long.toString(retriesSent.get()));
-            values.put(StatusKeys.Cfe.LINK_STATE, linkState);
+            values.put(StatusKeys.Cfe.RETRIES_SENT, Long.toString(sender.retriesSent()));
+            values.put(StatusKeys.Cfe.LINK_STATE, sender.linkState());
             return new StatusReply(values);
         }
         return ErrorReply.of("the CFE does not accept " + request.getClass().getSimpleName());
@@ -93,8 +108,15 @@ public final class Cfe implements RunningProcess {
 
     @Override
     public void crash() {
-        // TODO(Kobe, #31): also interrupt the sender thread and close its socket to the master.
-        if (listener != null) {
+        stop(false);
+    }
+
+    private void stop(boolean ingressFirst) {
+        if (ingressFirst && listener != null) {
+            listener.close();
+        }
+        sender.stop();
+        if (!ingressFirst && listener != null) {
             listener.close();
         }
         if (control != null) {
@@ -105,8 +127,7 @@ public final class Cfe implements RunningProcess {
 
     @Override
     public void close() {
-        // TODO(Kobe, #31): stop the sender and let a store in progress commit before the database
-        // closes. Until then a clean stop is the same as a crash.
-        crash();
+        // Stop ingress first; the synchronized database close waits for an acceptance to finish.
+        stop(true);
     }
 }
