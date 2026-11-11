@@ -1,8 +1,12 @@
 package edu.rit.swen755.inventory.store;
 
 import edu.rit.swen755.inventory.protocol.ErrorReply;
+import edu.rit.swen755.inventory.protocol.LineCodec;
+import edu.rit.swen755.inventory.protocol.MalformedLineException;
 import edu.rit.swen755.inventory.protocol.Message;
 import edu.rit.swen755.inventory.protocol.RetrySettings;
+import edu.rit.swen755.inventory.protocol.Sale;
+import edu.rit.swen755.inventory.protocol.SaleRecorded;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import edu.rit.swen755.inventory.protocol.StatusReply;
 import edu.rit.swen755.inventory.protocol.StatusRequest;
@@ -23,51 +27,73 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class StoreAgent implements RunningProcess {
 
-    private final StoreAgentConfig config;
-    private final RetrySettings retry;
     private final StoreDatabase database;
     /** Informational: sales recorded while the link was marked down, since this instance started. */
     private final AtomicLong salesWhileDown = new AtomicLong();
-    /** Informational: events resent to the CFE since this instance started. */
-    private final AtomicLong retriesSent = new AtomicLong();
-    /** Informational: times the link was marked down since this instance started. */
-    private final AtomicLong linkDownEpisodes = new AtomicLong();
-    /** Informational: state of the link to the CFE. */
-    private volatile String linkState = StatusKeys.LINK_UP;
+    private OutboxSender sender;
     private LineServer sales;
     private LineServer control;
 
-    private StoreAgent(StoreAgentConfig config, RetrySettings retry, StoreDatabase database) {
-        this.config = config;
-        this.retry = Objects.requireNonNull(retry, "retry");
+    private StoreAgent(StoreDatabase database) {
         this.database = database;
     }
 
-    /** Opens (or creates and seeds) the database, then binds both ports. */
+    /** Opens (or creates and seeds) the database, starts the sender to the link, then binds both ports. */
     public static StoreAgent start(StoreAgentConfig config, RetrySettings retry)
             throws IOException, SQLException {
-        StoreAgent store = new StoreAgent(config, retry, StoreDatabase.open(config.dataDir()));
+        return start(config, retry, false);
+    }
+
+    /**
+     * {@link #start(StoreAgentConfig, RetrySettings)} with the test-only crash hook. With
+     * {@code failSalesAfterStockUpdate} set, every sale transaction fails after its stock update and
+     * before its Outbox insert, and the sale is answered {@code ERR|reason}. A test uses it to show
+     * that neither change survives. It is off in every normal run and cannot be turned on from the
+     * command line.
+     */
+    static StoreAgent start(StoreAgentConfig config, RetrySettings retry, boolean failSalesAfterStockUpdate)
+            throws IOException, SQLException {
+        Objects.requireNonNull(retry, "retry");
+        StoreAgent store = new StoreAgent(
+                StoreDatabase.open(config.dataDir(), config.source(), failSalesAfterStockUpdate));
         try {
+            store.sender = OutboxSender.start(store.database, retry, config.linkPort(), config.source());
             store.sales = LineServer.start("store-sales", config.salesPort(), store::serveSales);
             store.control = LineServer.control("store-control", config.controlPort(), store::answer);
-        } catch (IOException e) {
+        } catch (IOException | SQLException e) {
             store.crash();
             throw e;
         }
-        // TODO(Godson, #30): start the sender to the fault link on config.linkPort(): send every
-        // Outbox event after acceptedThrough in sequence order with config.source(), at most
-        // retry.window() in flight, resend on retry.ackTimeout() with backoff, mark linkState DOWN
-        // after retry.linkDownAfter() failed attempts (counting linkDownEpisodes) and keep probing,
-        // and mark Outbox rows accepted on each ACK|accepted.
         return store;
     }
 
+    /** Answers each line on a point-of-sale connection, in order: {@code OK|eventId|sequence} or {@code ERR|reason}. */
     private void serveSales(LineConnection pointOfSale) throws IOException {
-        // TODO(Godson, #30): for each SALE, add delta = -quantity to the product's stock, insert the
-        // Outbox row (new event ID, next sequence, ISO-8601 UTC timestamp) and advance the sequence
-        // in one transaction, then reply OK|eventId|sequence; reply ERR|reason to anything else.
-        while (pointOfSale.readLine() != null) {
-            pointOfSale.send(new ErrorReply("sales are not implemented yet"));
+        String line;
+        while ((line = pointOfSale.readLine()) != null) {
+            pointOfSale.send(recordSale(line));
+        }
+    }
+
+    private Message recordSale(String line) {
+        Message request;
+        try {
+            request = LineCodec.decode(line);
+        } catch (MalformedLineException e) {
+            return ErrorReply.of(e.getMessage());
+        }
+        if (!(request instanceof Sale sale)) {
+            return ErrorReply.of("the sales port accepts only SALE|product|quantity");
+        }
+        try {
+            SaleRecorded recorded = database.recordSale(sale);
+            if (sender.linkState().equals(StatusKeys.LINK_DOWN)) {
+                salesWhileDown.incrementAndGet();
+            }
+            sender.saleRecorded();
+            return recorded;
+        } catch (SQLException e) {
+            return ErrorReply.of("sale not recorded: " + e.getMessage());
         }
     }
 
@@ -75,9 +101,9 @@ public final class StoreAgent implements RunningProcess {
         if (request instanceof StatusRequest) {
             Map<String, String> values = new LinkedHashMap<>(database.durableStatus());
             values.put(StatusKeys.Store.SALES_WHILE_DOWN, Long.toString(salesWhileDown.get()));
-            values.put(StatusKeys.Store.RETRIES_SENT, Long.toString(retriesSent.get()));
-            values.put(StatusKeys.Store.LINK_DOWN_EPISODES, Long.toString(linkDownEpisodes.get()));
-            values.put(StatusKeys.Store.LINK_STATE, linkState);
+            values.put(StatusKeys.Store.RETRIES_SENT, Long.toString(sender.retriesSent()));
+            values.put(StatusKeys.Store.LINK_DOWN_EPISODES, Long.toString(sender.linkDownEpisodes()));
+            values.put(StatusKeys.Store.LINK_STATE, sender.linkState());
             return new StatusReply(values);
         }
         return ErrorReply.of("the store does not accept " + request.getClass().getSimpleName());
@@ -96,22 +122,41 @@ public final class StoreAgent implements RunningProcess {
         return ports;
     }
 
+    /** Stops at once, as a killed process would: the sender first, then both ports and the database. */
     @Override
     public void crash() {
-        // TODO(Godson, #30): also interrupt the sender thread and close its socket to the link.
-        if (sales != null) {
+        stop(false);
+    }
+
+    /** Stops in order: the sales port first, then the sender, the control port and the database. */
+    @Override
+    public void close() {
+        stop(true);
+    }
+
+    /**
+     * Stops the sales port and the sender in the order {@code salesFirst} gives, then the control
+     * port, then the database. Closing the database waits for a transaction already committing, so a
+     * sale or acknowledgement in progress either commits whole or not at all.
+     *
+     * <p>{@code close} stops the sales port first, so no new sale starts once shutdown has begun,
+     * and only then the sender. {@code crash} stops the sender first, so the connection to the link
+     * drops at the moment of the crash and nothing more is sent or acknowledged after it, as when
+     * the process is killed; the ports go after.
+     */
+    private void stop(boolean salesFirst) {
+        if (salesFirst && sales != null) {
+            sales.close();
+        }
+        if (sender != null) {
+            sender.stop();
+        }
+        if (!salesFirst && sales != null) {
             sales.close();
         }
         if (control != null) {
             control.close();
         }
         database.close();
-    }
-
-    @Override
-    public void close() {
-        // TODO(Godson, #30): stop the sender and let a sale in progress commit before the database
-        // closes. Until then a clean stop is the same as a crash.
-        crash();
     }
 }

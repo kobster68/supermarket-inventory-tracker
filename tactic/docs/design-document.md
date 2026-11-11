@@ -27,8 +27,27 @@ TODO(Godson, #34): the module uses diagram, repeated from the README's Dependenc
 
 ### 4.1 Store Agent (owner: Godson Umoren)
 
-TODO(Godson, #30): the sale transaction (stock change, Outbox row, next sequence), the Outbox,
-the sender to the CFE, link-down marking, and restart from accepted-through.
+- **Transaction boundary.** One SQLite transaction per sale: subtract the quantity from the
+  product's stock, insert the Outbox row (new event ID, the next sequence number, product,
+  `delta` = −quantity, UTC timestamp, not yet accepted) and advance the sequence. Only after the
+  commit does the store answer `OK|eventId|sequence`. A failure anywhere rolls back all three, so
+  stock and Outbox never disagree and no sequence number is used up or reused. Sales are accepted
+  whether or not the link is up.
+- **Outbox sender (Retry).** Sends events after the accepted-through position in sequence order,
+  at most 100 unacknowledged. Each `ACK|accepted|source|through` is cumulative: it marks every row
+  up to `through` accepted in SQLite; a stale or duplicate acknowledgement never moves the position
+  backwards. With no progress within 500 ms (counted from the first send of a burst or the
+  position's last move), or when the connection fails, the store reconnects
+  after a backoff (100 ms doubling to 2 s, up to 20% jitter) and resends everything after the
+  position with the original event IDs.
+- **Link down.** After 10 consecutive failed attempts the store sets `linkState=DOWN`, logs it and
+  counts a link-down episode. It keeps every event and keeps probing every 2 s; the first
+  acknowledgement that moves accepted-through sets it `UP`. An acknowledgement that only repeats
+  accepted-through (the CFE refusing an event beyond a gap) is not progress: it neither resets the
+  count nor sets the link `UP`, so a CFE that answers but accepts nothing is marked `DOWN` too.
+- **Restart.** The accepted flag is durable, so a restarted store sends from accepted-through + 1
+  and asks the CFE nothing; the CFE's contiguity rule and cumulative acknowledgements realign both
+  sides. Initial stock is seeded once, when the file is created.
 
 ### 4.2 Fault link (owner: Leon Letournel)
 

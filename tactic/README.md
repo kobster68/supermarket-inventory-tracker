@@ -24,9 +24,9 @@ The design document is [`docs/design-document.md`](docs/design-document.md).
 
 ## Status and owners
 
-This is the step-0 scaffold: every process starts, binds its ports and answers `STATUS`, and the
-shared contract in `protocol` is complete. Tactic behaviour is marked `TODO(<owner>, #<issue>)`
-in the code.
+Every process starts, binds its ports and answers `STATUS`, and the shared contract in `protocol`
+is complete. The Store Agent records sales and runs its Outbox (#30). Tactic behaviour still to
+come is marked `TODO(<owner>, #<issue>)` in the code.
 
 | Part | Owner | Reviewer | Issue |
 |---|---|---|---|
@@ -132,6 +132,20 @@ applied twice, stock match) and which are informational.
   STATUS keys; the retry settings.
 - each process: starts on its ports (including port 0), reports what it bound, answers `STATUS`
   with every key, and keeps its durable `STATUS` values across a stop and a crash.
+- `store-agent`, over its ports with a fake CFE built from `protocol` on its link port: sales are
+  recorded and answered (and bad lines refused) whether or not the CFE is reachable; every event
+  reaches the CFE in order with its original event ID; lost events and lost acknowledgements are
+  covered by resends, and a resent event the CFE already holds is not stored twice; duplicate and
+  stale acknowledgements never move it backwards; at most the window is in flight; the link is
+  marked `DOWN` without losing an event, both when the CFE is unreachable and when it answers but
+  refuses every event, and `UP` again on the first acknowledgement that moves accepted-through; a
+  restarted store resumes after its last accepted sequence and never
+  re-seeds. The tests compress the retry timings and assert outcomes, never retry counts.
+- the Store Agent's sale transaction is also tested with a **test-only crash hook**, the one test
+  that reaches past the wire: the package-private
+  `StoreAgent.start(config, retry, failSalesAfterStockUpdate)` makes every sale fail after its
+  stock update and before its Outbox insert, and the test checks that neither change is present
+  after the store is reopened. The hook is off in every normal run and has no command-line option.
 - `system`: the in-JVM harness starts all four processes and crashes and restarts each one. A
   crash in the harness interrupts the process's threads, closes its sockets and releases its
   SQLite file without committing. An open transaction is rolled back and committed data stays,
