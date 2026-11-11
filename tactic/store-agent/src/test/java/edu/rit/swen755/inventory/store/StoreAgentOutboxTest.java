@@ -201,6 +201,30 @@ class StoreAgentOutboxTest {
     }
 
     @Test
+    void aSaleAfterAnIdlePeriodGetsTheFullAcknowledgementTimeout() throws Exception {
+        RetrySettings halfSecond = new RetrySettings(FAST.window(), Duration.ofMillis(500),
+                FAST.initialBackoff(), FAST.maxBackoff(), FAST.jitterPercent(), FAST.linkDownAfter());
+        cfe = FakeCfe.start(0);
+        cfe.delayAcks(Duration.ofMillis(300));
+        store = start(cfe.port(), halfSecond);
+
+        Map<Long, UUID> sold = new LinkedHashMap<>();
+        for (int round = 1; round <= 5; round++) {
+            sold.putAll(sell(store, 1));
+            long accepted = round;
+            await(store, s -> s.number("acceptedThrough") == accepted);
+            // Idle for most of an acknowledgement timeout, so the next sale lands late in an idle wait.
+            Thread.sleep(400);
+        }
+
+        StatusReply status = await(store, s -> s.number("pending") == 0);
+        assertEquals(sold, cfe.log());
+        assertEquals(0, status.number("retriesSent"), "every acknowledgement came within the timeout");
+        assertEquals(0, status.number("linkDownEpisodes"));
+        assertEquals("UP", status.value("linkState"));
+    }
+
+    @Test
     void aRestartedStoreResumesAfterItsLastAcceptedSequence() throws Exception {
         cfe = FakeCfe.start(0);
         cfe.acceptOnlyThrough(3);

@@ -6,6 +6,7 @@ import edu.rit.swen755.inventory.protocol.Publish;
 import edu.rit.swen755.inventory.protocol.net.LineConnection;
 import edu.rit.swen755.inventory.protocol.net.LineServer;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +43,8 @@ final class FakeCfe implements AutoCloseable {
     private volatile Behaviour behaviour = Behaviour.ACK;
     /** Events above this sequence are refused (not stored, current position acknowledged). */
     private volatile long acceptLimit = Long.MAX_VALUE;
+    /** How long each acknowledgement is held back before it is sent. */
+    private volatile Duration ackDelay = Duration.ZERO;
 
     private FakeCfe(int port) throws IOException {
         server = LineServer.start("fake-cfe", port, this::serve);
@@ -63,6 +66,11 @@ final class FakeCfe implements AutoCloseable {
     /** The first time {@code sequence} arrives it is lost, as on a lossy link. */
     void dropFirstDeliveryOf(long sequence) {
         dropFirstDelivery.add(sequence);
+    }
+
+    /** Holds every acknowledgement back for {@code delay}, as a slow CFE or link would. */
+    void delayAcks(Duration delay) {
+        ackDelay = delay;
     }
 
     void acceptOnlyThrough(long sequence) {
@@ -111,6 +119,12 @@ final class FakeCfe implements AutoCloseable {
             }
             if (behaviour == Behaviour.DROP_ACKS) {
                 continue;
+            }
+            try {
+                Thread.sleep(ackDelay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             }
             store.send(new Ack(AckKind.ACCEPTED, event.source(), through));
             if (behaviour == Behaviour.NOISY_ACKS) {

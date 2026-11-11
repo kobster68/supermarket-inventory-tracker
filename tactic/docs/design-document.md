@@ -36,7 +36,8 @@ TODO(Godson, #34): the module uses diagram, repeated from the README's Dependenc
 - **Outbox sender (Retry).** Sends events after the accepted-through position in sequence order,
   at most 100 unacknowledged. Each `ACK|accepted|source|through` is cumulative: it marks every row
   up to `through` accepted in SQLite; a stale or duplicate acknowledgement never moves the position
-  backwards. With no progress within 500 ms, or when the connection fails, the store reconnects
+  backwards. With no progress within 500 ms (counted from the first send of a burst or the
+  position's last move), or when the connection fails, the store reconnects
   after a backoff (100 ms doubling to 2 s, up to 20% jitter) and resends everything after the
   position with the original event IDs.
 - **Link down.** After 10 consecutive failed attempts the store sets `linkState=DOWN`, logs it and

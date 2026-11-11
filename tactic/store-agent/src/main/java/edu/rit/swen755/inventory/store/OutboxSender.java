@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@code ACK|accepted} is cumulative: it marks every event up to its {@code through} accepted in
  * SQLite. A stale one (below accepted-through) is ignored, so accepted-through never moves
  * backwards. The attempt fails when no acknowledgement moves accepted-through within
- * {@link RetrySettings#ackTimeout()} while events are in flight, or when the connection cannot be
+ * {@link RetrySettings#ackTimeout()} while events are in flight, measured from when the first event
+ * of a burst is sent or accepted-through last moved, or when the connection cannot be
  * opened or is lost. The sender then waits the backoff (from {@link RetrySettings#initialBackoff()},
  * doubling up to {@link RetrySettings#maxBackoff()}, plus jitter), reconnects and resends everything
  * after accepted-through, with the events' original identities. After
@@ -170,11 +171,15 @@ final class OutboxSender {
             long deadline = System.nanoTime() + retry.ackTimeout().toNanos();
             while (!stopped) {
                 long acceptedThrough = acceptedThrough();
-                if (acceptedThrough > lastAcceptedThrough) {
+                next = Math.max(next, acceptedThrough + 1);
+                boolean moved = acceptedThrough > lastAcceptedThrough;
+                boolean nothingInFlight = next - 1 == acceptedThrough;
+                if (moved || nothingInFlight) {
+                    // The timeout runs from the position last moving, or from the first event sent
+                    // after nothing was in flight; a repeated acknowledgement does not extend it.
                     lastAcceptedThrough = acceptedThrough;
                     deadline = System.nanoTime() + retry.ackTimeout().toNanos();
                 }
-                next = Math.max(next, acceptedThrough + 1);
                 long room = acceptedThrough + retry.window() - (next - 1);
                 if (room > 0) {
                     for (Publish event : database.eventsAfter(next - 1, (int) room)) {
@@ -188,9 +193,6 @@ final class OutboxSender {
                     }
                 }
                 boolean inFlight = next - 1 > acceptedThrough;
-                if (!inFlight) {
-                    deadline = System.nanoTime() + retry.ackTimeout().toNanos();
-                }
                 long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
                 awaitSignal(waitMillis);
                 if (!reader.isAlive()) {
