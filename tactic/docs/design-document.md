@@ -61,8 +61,20 @@ gaps, and the sender to the master.
 
 ### 4.4 Central Master Inventory (owner: Mike Andrews)
 
-TODO(Mike, #32): the apply transaction (stock change, applied-event record, cursor), duplicate
-detection by event ID and by sequence, and seed-once initial stock.
+- **Apply transaction.** `MasterDatabase.apply` adds the event's signed `delta` to stock, records
+  its ID and source sequence, and advances the cursor in one SQLite transaction. `MasterInventory`
+  sends `ACK|applied|source|through` after that transaction commits.
+- **Duplicates and gaps.** A recorded event ID or a sequence at or below the cursor returns the
+  saved position and increments `duplicatesIgnored`. An event ahead of the next sequence returns
+  the current position so the CFE can resend the missing events. Stock changes once for each new,
+  contiguous event, making retries idempotent.
+- **Restart and status.** The demo accepts one configured store source. Each product starts at
+  1,000,000 units when the database is created. Restarts reopen the saved stock, applied records and
+  cursor. Durable STATUS values come from SQLite. The informational duplicate counter starts at
+  zero on each restart.
+- **Concurrency and failure tests.** Apply, STATUS and database close use the same database lock.
+  An apply failure rolls back the transaction. A test-only hook fails after the stock
+  update to check rollback. Wire tests cover retries, gaps, restart and concurrent requests.
 
 ## 5. Sequence diagrams
 
