@@ -21,7 +21,7 @@ loop every sale during the outage
   SA -> OB : append
 end
 OB -x CFE : publish fails; events held
-note over OB : buffers in order; sized for a 30-min\noutage at 100 events/s (~180,000 events)
+note over OB : buffers in order; sized in days\nat 100 events/s
 
 == WAN link restored ==
 OB -> CFE : replay-from-sequence (last acknowledged)\nIEP / TLS 1.3 mutual certs [secure]

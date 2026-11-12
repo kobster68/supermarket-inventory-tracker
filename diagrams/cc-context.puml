@@ -1,5 +1,5 @@
 @startuml
-' Context diagram at the level of the Components-and-Connectors view (Figure 6).
+' Context diagram at the level of the Components-and-Connectors view.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 !include style.puml
 title Components-and-Connectors view: context diagram
@@ -10,12 +10,12 @@ skinparam componentStyle rectangle
 actor "Store\nmanager" as SM
 actor "DC\nmanager" as DM
 node "External\nPOS system\n(per store)" as POS #6FA8DC
-node "External Analytics\nClient (future\nsubscriber)" as ANLY #6FA8DC
+node "External Analytics\nClient (future\nquery client)" as ANLY #6FA8DC
 
 rectangle "**Supermarket Inventory Tracking System**\n(stores + distribution center;\nscope of this C&C view)" as SYS #93C47D
 
 POS --> SYS : <<event stream>>\nsales records
-SYS --> ANLY : <<pub-sub>>\ninventory events
+ANLY --> SYS : <<request/reply>>\nread-only queries (Inventory\nQuery; authorized, rate-limited)
 SYS --> SM : <<request/reply>>\nstore inventory views
 SM --> SYS : <<request/reply>>\nlocal queries, order confirmation
 SYS --> DM : <<request/reply>>\nmaster inventory,\nreports, shipping orders
@@ -25,8 +25,9 @@ legend bottom
   The shaded box is the view's scope: the store systems and the
   distribution-center system of the primary presentation, taken as one.
   Blue boxes are external systems: the POS system feeds a one-way event
-  stream in, and the External Analytics Client is an external subscriber.
-  Stick figures are human roles. The n-ary <<pub-sub>>, <<data access>>
-  and <<local call>> connectors are internal to the box.
+  stream in, and the External Analytics Client reads the master record
+  only through the read-only Inventory Query. Stick figures are human
+  roles. The n-ary <<pub-sub>>, <<data access>> and <<local call>>
+  connectors are internal to the box.
 endlegend
 @enduml

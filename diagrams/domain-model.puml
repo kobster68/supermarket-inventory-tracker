@@ -1,8 +1,9 @@
 @startuml
-' Class diagram decomposing the Common module's Domain Model (Figure 8).
+' Class diagram decomposing the Common module's Domain Model.
 ' Authored in issue #9. Renders through scripts/render-diagrams.sh.
-' The catalog uses the GoF Composite pattern: CatalogItem is the component, Product the
-' leaf, ProductFamily the composite, and totalValue() is the recursive operation.
+' The GoF Composite applies only to the family hierarchy, which is a tree: a family has
+' at most one parent and any number of sub-families. Products are not part of the
+' Composite; they join families through a separate many-to-many membership association.
 ' Every association carries multiplicities; the key names each relation type.
 !include style.puml
 title Domain model: class diagram of the Common module
@@ -16,9 +17,6 @@ skinparam nodesep 16
 skinparam ranksep 32
 
 together {
-  abstract class CatalogItem {
-    totalValue(): Money
-  }
   class Product {
     id
     name
@@ -26,6 +24,7 @@ together {
   }
   class ProductFamily {
     name
+    totalValue(): Money
   }
 }
 
@@ -64,16 +63,16 @@ together {
   }
 }
 
-' ---- GoF Composite: the product catalog ----------------------------------------
-CatalogItem <|-- Product
-CatalogItem <|-- ProductFamily
-ProductFamily "0..*" o-- "0..*" CatalogItem : contains >
-note top of CatalogItem
-  GoF Composite pattern: CatalogItem is the component,
-  Product the leaf, ProductFamily the composite;
-  totalValue() is the recursive operation. A product may
-  belong to several families (many-to-many); the family
-  total-value report counts it once per family.
+' ---- GoF Composite over the family tree; products join by membership -----------
+ProductFamily "0..1" o-- "0..*" ProductFamily : sub-families >
+ProductFamily "0..*" --> "0..*" Product : members >
+note top of ProductFamily
+  GoF Composite over the family hierarchy only: a family
+  has at most one parent, so the hierarchy is a tree.
+  Membership is a separate many-to-many association, so
+  a product may belong to several families. totalValue()
+  walks the sub-families and counts each product once
+  per family.
 end note
 
 ' ---- holders and the stock they carry ------------------------------------------

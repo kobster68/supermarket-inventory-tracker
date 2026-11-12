@@ -9,9 +9,9 @@ runtime components and deployment nodes. Every internal runtime component
 of the C\&C view is realised by exactly one module of the module view, as
 Table~\ref{tab:view-mapping} records. The module view adds one module, Common, that is
 implementation-only --- the shared domain types and the \IEP library --- and so has no
-runtime component of its own. The external
-\AnalyticsClient appears across the views but is external to the system: it uses the Common
-module's \IEP library and realises no module of ours, so it does not appear in the mapping.
+runtime component of its own. The \StandbyMaster is a second instance of the module that
+realises the \CentralMasterInventory. The external \AnalyticsClient is outside the system:
+it reads through the \InventoryQuery and realises no module of ours, so it is not mapped.
 
 \begin{table}[htbp]
 \centering
@@ -23,7 +23,7 @@ module's \IEP library and realises no module of ours, so it does not appear in t
 \textbf{Module (module view)} & \textbf{Runtime components it realises (C\&C view)}\\\hline
 Store Subsystem & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
 \CFE & \CFE, CFE event store\\\hline
-Distribution Center Subsystem & \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
+Distribution Center Subsystem & \DCAgent, \CentralMasterInventory, \StandbyMaster, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
 Common & None --- shared code used by the other three modules\\\hline
 \end{tabularx}
 \caption{Module-to-runtime-component mapping between the module decomposition view and the Components-and-Connectors view.}
@@ -43,8 +43,9 @@ into the deployed services, not an additional runtime host.
 \textbf{Runtime components / state} & \textbf{Execution node / storage}\\\hline
 \POSAdapter, \StoreAgent & Store node, one pair per store ($\times N$)\\\hline
 \StoreLocalInventory, \Outbox & Store node's local durable storage ($\times N$)\\\hline
-\CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient & Single \DC node in the baseline\\\hline
-CFE event store, master inventory database & \DC node's local durable storage\\\hline
+\CFE, \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient & Primary \DC node\\\hline
+\StandbyMaster and its database copy & Second \DC host (Section~\ref{sec:allocation-view})\\\hline
+CFE event store, master inventory database & Primary \DC node's local durable storage\\\hline
 External POS system & External POS node, one per store\\\hline
 \AnalyticsClient & External analytics node (future capability)\\\hline
 \end{tabularx}
@@ -57,5 +58,5 @@ source/subscription positions and processing checkpoints belong to the correspon
 host's durable storage. These artifacts support the recovery behavior in
 Figure~\ref{fig:cc-seq-reconcile}; they add no separate application component.
 The WAN connects the store and \DC hosts inside the system boundary, while POS
-and analytics links cross that boundary. Separating \DC services onto additional
-hosts requires updating this baseline mapping and its capacity/failure assumptions.
+and analytics query links cross that boundary. Separating other \DC services onto
+additional hosts requires updating this mapping and its capacity/failure assumptions.

@@ -1,5 +1,5 @@
 @startuml
-' Primary presentation of the Module Decomposition view (Figure 7, the primary view).
+' Primary presentation of the Module Decomposition view (the primary view).
 ' Authored in issue #9. Renders through scripts/render-diagrams.sh.
 ' Nesting shows the is-part-of relation; dashed <<uses>> arrows show the uses relation.
 ' Leaf sub-modules are rectangles (referenced by alias) nested in the subsystem packages,
@@ -30,7 +30,7 @@ package "Communications Front-End" as CFE #F1C232 {
 
 package "Distribution Center Subsystem" as DC #F1C232 {
   rectangle "DC Agent"
-  rectangle "Central Master\nInventory"
+  rectangle "Central Master\nInventory\n(primary and standby)" as CMIMOD
   rectangle "Shipping-Order\nFulfillment"
   rectangle "Store-Tracking\nClient"
   rectangle "Reporting Client"
@@ -41,17 +41,17 @@ package "Common" as COMMON #D9D9D9 {
   rectangle "Domain Model" as DM
 }
 
-node "External Analytics Client\n(external user of the\nIEP library)" as ANLY #6FA8DC
+node "External Analytics Client\n(external query client)" as ANLY #6FA8DC
 
 ' ---- uses relations: every subsystem uses Common's Domain Model; the Store and DC
 '      subsystems also use the IEP library; the external analytics client uses the
-'      IEP library from outside the system. ---------------------------------------
+'      read-only Inventory Query of the Central Master Inventory. ------------------
 STORE ..> DM : <<uses>>
 CFE   ..> DM : <<uses>>
 DC    ..> DM : <<uses>>
 STORE ..> IEPLIB : <<uses>>
 DC    ..> IEPLIB : <<uses>>
-ANLY  ..> IEPLIB : <<uses>>
+ANLY  ..> CMIMOD : <<uses>>\nInventory Query (read-only)
 
 legend right
 |= Notation |= Meaning |
@@ -60,7 +60,7 @@ legend right
 | green fill | Store Subsystem (realises the store-side runtime components) |
 | gold fill | distribution-center modules (realise the DC-side runtime components) |
 | grey fill | Common: shared code, realises no runtime component on its own |
-| blue fill | external user of the system's shared code |
+| blue fill | external client of the system |
 | dashed arrow <<uses>> | one module uses another (depends on it) |
 endlegend
 @enduml

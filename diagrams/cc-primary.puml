@@ -27,23 +27,29 @@ rectangle "Store  (one of N: 3 now, up to 10)" as STORE {
 ' ---- distribution center ------------------------------------------------------
 rectangle "Distribution Center" as DCB {
   component "Communications\nFront-End\n(pub-sub event bus)" as CFE #F1C232
-  interface "IEP\n(publish, ack)" as IEPIF
-  interface "IEP\n(subscribe, deliver)" as DLV
+  interface " " as IEPIF
+  interface " " as DLV
   database "CFE event\nstore" as CFEDB #8E7CC3
   component "DC Agent" as DCA #F1C232
   component "Central Master\nInventory" as CMI #F1C232
   database "Master\ninventory DB" as CMIDB #8E7CC3
+  interface "Inventory Query\n(read-only)" as IQ
+  component "Standby Master\nInventory\n(second DC host)" as SMI #F1C232
   component "Shipping-Order\nFulfillment" as SOF #F1C232
   component "Store-Tracking\nClient" as STC #F1C232
   component "Reporting Client" as RC #F1C232
 }
 actor "DC\nmanager" as DMGR
-node "External Analytics\nClient (future\nsubscriber)" as ANLY #6FA8DC
+node "External Analytics\nClient (future\nquery client)" as ANLY #6FA8DC
 
 ' the CFE provides the IEP on two ports (lollipops): a publish/acknowledge side and
-' a subscribe/deliver side
-CFE -- IEPIF
-CFE -- DLV
+' a subscribe/deliver side; each port is named on its stalk so no connector crosses the name
+CFE -- IEPIF : IEP\n(publish, ack)
+CFE -- "IEP\n(subscribe, deliver)" DLV
+' the Central Master Inventory provides the read-only Inventory Query; the standby
+' takes it over when the primary fails
+CMI -- IQ
+SMI .. IQ : serves on\nfailover
 
 ' ---- connectors (every edge: <<type>> protocol) -------------------------------
 POS --> POSAD : <<event stream>>\nsales records
@@ -60,17 +66,20 @@ DLV --> CMI : <<pub-sub>> notify
 DLV --> SOF : <<pub-sub>> notify
 DLV --> STC : <<pub-sub>> notify
 DLV --> RC : <<pub-sub>> notify
-DLV --> ANLY : <<pub-sub>> notify
+DLV --> SMI : <<pub-sub>> notify
 CMI --> DLV : <<pub-sub>>\nack (applied through N)
 CMI --> CMIDB : <<data access>>
-SOF --> CMI : <<request/reply>> read
-RC --> CMI : <<request/reply>> query
-STC --> CMI : <<request/reply>> query
-DMGR --> RC : <<request/reply>> reports
-DMGR --> STC : <<request/reply>> store status
+SOF --> IQ : <<request/reply>> read
+RC --> IQ : <<request/reply>> query
+STC --> IQ : <<request/reply>> query
+ANLY --> IQ : <<request/reply>> read-only query\n[authorized, rate-limited]
+DMGR -[norank]-> RC : <<request/reply>> reports
+DMGR -[norank]-> STC : <<request/reply>> store status
 
-' keep the DC manager to the right of the client components, clear of the IEP ports and labels
-CMIDB -[hidden]down- DMGR
+' place the DC manager to the right of the client components and the DC Agent beside the
+' publish port, so both stay clear of the IEP ports and their names
+RC -[hidden]-> DMGR
+IEPIF -[hidden]down- DCA
 
 note bottom of CFE
   The CFE is the pub-sub event bus of the Publish-Subscribe pattern
@@ -79,9 +88,10 @@ note bottom of CFE
   Agent) publish and are acknowledged; every subscriber receives every
   event, filters locally, and acknowledges a cumulative cursor (applied
   through sequence N per source). The event store retains each accepted
-  event until every subscription has acknowledged past it plus a
-  retention window, and serves the replay read path to a subscriber that
-  fell behind or restarted.
+  event until every active subscription has acknowledged past it, and
+  serves the replay read path to a subscriber that fell behind or
+  restarted. The Standby Master is a second subscription that applies
+  every event, so it is current when the primary fails.
 end note
 
 legend right
@@ -91,6 +101,7 @@ legend right
 | blue fill | external system or boundary element |
 | purple database / queue | durable, ordered persistent store |
 | circle on a stalk (lollipop) | a provided interface (port) a connector attaches to |
+| dashed line to an interface | the standby provides that interface when the primary fails |
 | stick figure | human role (store or DC manager), not a component |
 | <<pub-sub>> | the n-ary publish-subscribe connector (the IEP) |
 | <<event stream>> | a one-way stream of events, no reply |
