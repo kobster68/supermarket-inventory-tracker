@@ -14,11 +14,11 @@ database "Store-Local\nInventory" as SLI #8E7CC3
 queue "Outbox" as OB #8E7CC3
 participant "Communications\nFront-End" as CFE #F1C232
 database "CFE event store" as CFEDB #8E7CC3
-participant "Subscribers\n(CMI, Shipping-Order Fulfillment,\nStore-Tracking, Reporting, Analytics)" as SUB #F1C232
+participant "Subscribers\n(CMI, Standby Master, Shipping-Order\nFulfillment, Store-Tracking, Reporting)" as SUB #F1C232
 
 POS -> POSAD : sales record (event stream)
 POSAD -> SA : Inventory Event
-group one local step
+group one local transaction (stock update and Outbox append commit together)
   SA -> SLI : apply (update stock)
   SA -> OB : append (durable, ordered)
 end
@@ -28,14 +28,14 @@ CFE --> OB : acknowledge (acceptedThrough sequence)\n[secure]
 note over OB : holds the last acknowledged\nsequence; acknowledged events\nmay then be pruned
 CFE -> SUB : notify (every subscriber receives\nevery event and filters locally)
 SUB --> CFE : acknowledge (applied through\nsequence N per source)
-note over CFE, CFEDB : the CFE keeps a per-subscription delivered position; the event\nstore retains each accepted event until every subscription has\nacknowledged past it plus a retention window
+note over CFE, CFEDB : the CFE keeps a per-subscription delivered position; the event\nstore retains each accepted event until every active subscription\nhas acknowledged past it
 note over SUB : idempotent by event ID;\nduplicates are ignored
 
 note over SA, CFE : A store-raised Shipping Order travels as a second message type on\nthe same connector: the Store Agent raises it when a product reaches its\nminimum, the store manager confirms it, and it is published, acknowledged\nand fanned out exactly as above; Shipping-Order Fulfillment receives it and\nthe DC Agent publishes the DC-side stock event when the goods ship.
 
 legend right
   Normal path. The store never blocks on the WAN:
-  the local step completes first, then the Outbox
+  the local transaction commits first, then the Outbox
   publishes. At-least-once delivery, acknowledged
   per source sequence; subscribers acknowledge a
   cumulative cursor so the event store knows what

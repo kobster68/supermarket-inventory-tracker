@@ -1,9 +1,11 @@
 @startuml
-' Behavior 3 (new): recovery and reconciliation after a failure.
+' Behavior 3: recovery and reconciliation after a failure.
 ' Authored in Slice 2. Renders through scripts/render-diagrams.sh.
 ' Store-local inventory and the master record are both projections of the per-source
-' event log. The side that lost state rebuilds by replay from the authoritative log;
-' a resync compares per-source sequence watermarks first to decide what is missing.
+' event log. A hot standby of the master takes over at once; a copy that lost state
+' rebuilds and then replays from the authoritative log. When the events a store would
+' replay are no longer in its Outbox it sends a snapshot instead, and the master replaces
+' that store's figures.
 !include style.puml
 title Components-and-Connectors view: behavior, recovery and reconciliation
 
@@ -16,38 +18,46 @@ database "Store-Local\nInventory" as SLI #8E7CC3
 participant "Communications\nFront-End" as CFE #F1C232
 database "CFE event store" as CFEDB #8E7CC3
 participant "Central Master\nInventory" as CMI #F1C232
+participant "Standby Master\nInventory" as SMI #F1C232
 
-== Master-inventory crash and rebuild (AV-3) ==
-CMI -> CMI : process crashes
-note over CFE, CFEDB : the CFE keeps accepting and persisting events\nwhile the master is down; stores keep publishing
-CMI -> CFE : subscribe (resume)
-CMI -> CFE : resync (per-source lastKnownSequence)
-CFE --> CMI : watermarks per source\n(acceptedThrough, earliestRetained)
-note over CMI, CFE : compare per-source watermarks to find the gap
-CMI -> CFE : replay-from-sequence (per source)
-CFE -> CFEDB : read retained events from the sequence (replay read path)
-CFEDB --> CFE : events in source order
+== Master failure: the standby takes over (AV-3) ==
+CMI -> CMI : process or host fails
+note over CMI : a master that cannot renew its\nlease stops serving queries, so only\none master answers at a time
+note over SMI : a second subscription that has applied\nevery event, so it is already current;\nmissed heartbeats detect the failure
+SMI -> SMI : takes over the Inventory Query only after\nthe active master's lease has expired;\nquery clients fail over within seconds
+note over CFE, CFEDB : the CFE keeps accepting events and\ndelivering them to the standby; stores\nkeep publishing
+CMI -> SMI : on restart, copies the standby's state\nand per-source applied positions
+CMI -> CFE : subscribe (resume), then resync
+CMI -> CFE : replay from the copied positions
+CFE -> CFEDB : read retained events (replay read path)
 CFE --> CMI : missing events in source order
-note over CMI : apply idempotently; the master record is\ncurrent again within 30 min, store operation\nnever stops (AV-3)
+note over CMI : applies idempotently, then\nrejoins as the standby
 
-== Store node restart and rebuild (TEST-2) ==
-SA -> SA : supervised restart\n(in-memory state lost)
-note over SLOG : the Outbox and local event log are durable\nand survive the restart
-SA -> SLOG : resync: read per-source watermarks
-SLOG --> SA : last applied / last appended sequence
-note over SA, SLOG : compare per-source watermarks to decide what to replay
-SA -> SLOG : replay local event log
+== Store reconnect or restart (AV-1, TEST-2) ==
+SA -> SLOG : after a restart: replay\nthe local event log
 SLOG --> SA : events in source order
 SA -> SLI : rebuild projection (idempotent)
-SA -> CFE : resync, then replay unacknowledged Outbox events\nIEP / TLS 1.3 mutual certs [secure]
-note over SA, CFE : backlog drains at up to 2,000 events/s per store\nwhile live sales continue (PERF-4); detection and\nrestored access are measured to within 1 s (TEST-2)
+SA -> CFE : resync (per-source sequence watermarks)\nIEP / TLS 1.3 mutual certs [secure]
+alt history complete (the normal path, any outage length)
+  SA -> CFE : replay unacknowledged Outbox events
+  note over SA, CFE : backlog drains at up to 2,000 events/s per store\nwhile live sales continue (PERF-4)
+else events to replay no longer in the Outbox
+  CFE --> SA : snapshot required
+  SA -> CFE : Store Snapshot (stock per product,\nopen shipping orders, sequence position)
+  CFE -> CMI : deliver Store Snapshot (also to the standby)
+  note over CFE : delivers the open orders to Shipping-Order\nFulfillment, which ignores duplicates\nby order identifier
+  note over CMI : replaces that store's figures and\ncontinues from the snapshot's sequence\nposition (state resynchronization)
+end
 
 legend right
   Both inventory copies are projections of the per-source
-  event log. The side that lost state compares per-source
-  sequence watermarks, then replays from the authoritative
-  log: the store's own durable log for the store, the CFE
-  event store for the master. Replay is idempotent, so no
-  event is lost or applied twice.
+  event log. Only the master holding the lease serves queries.
+  A failed master copy copies the standby's state and per-source
+  applied positions, then replays from those positions in the
+  CFE event store. A store replays its Outbox after an outage
+  of any length.
+  Replay is idempotent, so no event is lost or applied twice.
+  A store whose events are no longer in its Outbox sends a
+  snapshot, and the master continues from its position.
 endlegend
 @enduml

@@ -42,9 +42,11 @@ uses relation; the notation is read from the figure's key.
 Table~\ref{tab:module-elements} lists the four top-level modules and the runtime
 components of the Components-and-Connectors view (Table~\ref{tab:cc-components}) each
 realises. Every runtime component and data store is realised by exactly one module; the Common module
-realises none, being shared code rather than a running element. The external \AnalyticsClient
-is not a module of ours: it is an external client that uses the Common module's \IEP library,
-shown outside the four modules in Figure~\ref{fig:module-decomposition}.
+realises none, being shared code rather than a running element. The \StandbyMaster is a
+second running instance of the \CentralMasterInventory sub-module, so it adds no module.
+The external \AnalyticsClient is not a module of ours: it reads through the \InventoryQuery
+of the \CentralMasterInventory, shown outside the four modules in
+Figure~\ref{fig:module-decomposition}.
 
 \begin{table}[htbp]
 \centering
@@ -56,7 +58,7 @@ shown outside the four modules in Figure~\ref{fig:module-decomposition}.
 \textbf{Module} & \textbf{Responsibility} & \textbf{Runtime components realised}\\\hline
 Store Subsystem & Code that runs in a store: converts point-of-sale records into \InventoryEvent{}s, keeps the store's own inventory copy, raises a \ShippingOrder when a product reaches its minimum, and buffers events and orders for guaranteed, ordered delivery to the \DC. & \POSAdapter, \StoreAgent, \StoreLocalInventory, \Outbox\\\hline
 \CFE & The pub-sub event bus code at the \DC: persists each event, acknowledges it, manages subscriptions, and delivers every event to every subscriber. Sub-modules: Event Bus, Event Store, Subscription Management. & \CFE, CFE event store\\\hline
-Distribution Center Subsystem & The \DC-side application code: the master record, shipping-order fulfilment, and the subscriber clients. & \DCAgent, \CentralMasterInventory, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
+Distribution Center Subsystem & The \DC-side application code: the master record, shipping-order fulfilment, and the subscriber clients. & \DCAgent, \CentralMasterInventory, \StandbyMaster, \ShippingOrderFulfillment, \StoreTrackingClient, \ReportingClient, Master inventory database\\\hline
 Common & Shared code used by the other three modules: the domain types (Figure~\ref{fig:domain-model}) and the \IEP library. & None\\\hline
 \end{tabularx}
 \caption{Element catalog --- modules of the module decomposition view and the runtime components each realises.}
@@ -65,11 +67,12 @@ Common & Shared code used by the other three modules: the domain types (Figure~\
 
 \paragraph{Domain model.}
 The Common module's Domain Model is decomposed in Figure~\ref{fig:domain-model}, a class
-diagram of the shared domain types. The product catalog uses the GoF Composite pattern: an
-abstract \texttt{CatalogItem} with a recursive \texttt{totalValue()} operation,
-\texttt{ProductFamily} as the composite and \texttt{Product} as the leaf. Product-to-family
-membership is many-to-many, so a product may belong to several families, and the family
-total-value report counts it once per family. An \InventoryEvent carries its source,
+diagram of the shared domain types. The GoF Composite pattern applies only to the family
+hierarchy: a \texttt{ProductFamily} contains sub-families and has at most one parent, so
+the hierarchy is a tree. A \texttt{Product} is not a Composite leaf; it joins families
+through a separate many-to-many membership association, so it may belong to several
+families. A family's \texttt{totalValue()} walks its sub-families and counts each product
+once per family. An \InventoryEvent carries its source,
 product, sequence and quantity delta; an InventoryLevel is the stock of one product at one
 store or \DC; a \ShippingOrder carries lines of product and quantity with a status, raised
 at a store and fulfilled by the \DC; and a report is one of the three the brief names.
@@ -78,7 +81,7 @@ Every association carries multiplicities.
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.74\linewidth,height=0.34\textheight,keepaspectratio]{domain-model}
-\caption{Module decomposition view --- the Common module's Domain Model, with the product catalog as a GoF Composite.}
+\caption{Module decomposition view --- the Common module's Domain Model, with the family hierarchy as a GoF Composite.}
 \label{fig:domain-model}
 \end{figure}
 
@@ -87,13 +90,14 @@ Every association carries multiplicities.
 is part of its subsystem. \emph{Uses} is the six dashed arrows: the Store Subsystem, the
 \CFE and the Distribution Center Subsystem each use the Common Domain Model; the Store and
 Distribution Center subsystems additionally use the \IEP library; and the external
-\AnalyticsClient uses the \IEP library from outside the system. No other module-to-module
-dependency exists.
+\AnalyticsClient uses the read-only \InventoryQuery of the \CentralMasterInventory. No
+other module-to-module dependency exists.
 
 \paragraph{Interfaces.}
-The only interface a module view fixes is the provided interface of the \IEP library, the
-full specification of Section~\ref{sec:iep}; the other shared contract is the set of
-domain types in Figure~\ref{fig:domain-model}.
+The module view fixes two provided interfaces: the \IEP library's, specified in
+Section~\ref{sec:iep}, and the \CentralMasterInventory's read-only \InventoryQuery
+(Table~\ref{tab:cc-connectors}). The other shared contract is the set of domain types in
+Figure~\ref{fig:domain-model}.
 
 \paragraph{Behavior.}
 A module view records no runtime behavior; the event flow and the outage-and-replay
@@ -113,16 +117,16 @@ behavior are documented in the Components-and-Connectors view (Section~\ref{sec:
 The module view shares the system boundary of the key view, fixed by the context diagram
 of the Components-and-Connectors view (Figure~\ref{fig:cc-context}) and not repeated here;
 the external POS system is reached only through the \POSAdapter module, and the external
-\AnalyticsClient attaches from outside through the Common module's \IEP library.
+\AnalyticsClient reaches the system only through the \InventoryQuery.
 
 \subsubsection{Variability mechanisms}
 \label{sec:module-variability}
 \begin{itemize}[nosep]
   \item \emph{A new client type:} a new sub-module of the Distribution Center Subsystem
-  that uses the \IEP library, with no change to existing modules (\scnref{MOD-1},
-  \scnref{INT-2}).
-  \item \emph{Deeper product families:} nesting depth lives in the composite in the domain
-  model, so a new level is a data change, not a module change (\scnref{MOD-2}).
+  that subscribes through the \IEP library or reads through the \InventoryQuery, with no
+  change to existing modules (\scnref{MOD-1}, \scnref{INT-2}).
+  \item \emph{Deeper product families:} nesting depth lives in the family Composite, so a
+  new level is a data change, not a module change (\scnref{MOD-2}).
   \item \emph{More stores:} not a module concern --- every store is the same Store
   Subsystem, so the chain grows by instances, not modules (\scnref{SCAL-1}).
   \item \emph{A new platform:} platform-specific code is confined to the \POSAdapter and
@@ -142,6 +146,6 @@ client is added without touching existing modules).
 \subsubsection{Related view packets}
 This primary view maps onto the Components-and-Connectors key view
 (Section~\ref{sec:cc-view}); the module-to-component mapping is collected in
-Section~\ref{sec:relations}. The Allocation view, deferred to the second draft, will map
-these modules and components onto the nodes they are built and run on.
+Section~\ref{sec:relations}. The Allocation view (Section~\ref{sec:allocation-view}) maps
+these modules and components onto the nodes they run on.
 \endgroup
