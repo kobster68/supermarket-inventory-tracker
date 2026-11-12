@@ -222,9 +222,12 @@ positions, and rejoins as the standby. After a
 store restart (\scnref{TEST-2}) the \StoreAgent rebuilds the \StoreLocalInventory from
 its own durable log, then resyncs with the \CFE and replays its \Outbox. If the events
 the store would need to replay are no longer in its \Outbox, the \CFE's resync declares
-a snapshot required, and the store sends a \StoreSnapshot of its stock per product with
-its sequence position. The master replaces that store's figures and continues from the
-snapshot's sequence position (state resynchronization, 60). Replay is idempotent, so no event is lost or applied twice
+a snapshot required, and the store sends a \StoreSnapshot of its stock per product, every
+confirmed \ShippingOrder the \DC has not yet acknowledged, and its sequence position. The
+master replaces that store's figures and continues from the snapshot's sequence position
+(state resynchronization, 60). The open orders reach \ShippingOrderFulfillment, which ignores
+an order it already holds by the order's identifier, so an order delivered before the outage
+and again in the snapshot is fulfilled once. Replay is idempotent, so no event is lost or applied twice
 (Section~\ref{sec:iep}).
 
 \begin{figure}[htbp]

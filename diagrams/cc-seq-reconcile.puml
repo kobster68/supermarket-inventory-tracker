@@ -43,8 +43,9 @@ alt history complete (the normal path, any outage length)
   note over SA, CFE : backlog drains at up to 2,000 events/s per store\nwhile live sales continue (PERF-4)
 else events to replay no longer in the Outbox
   CFE --> SA : snapshot required
-  SA -> CFE : Store Snapshot (stock per product,\nsequence position)
+  SA -> CFE : Store Snapshot (stock per product,\nopen shipping orders, sequence position)
   CFE -> CMI : deliver Store Snapshot (also to the standby)
+  note over CFE : delivers the open orders to Shipping-Order\nFulfillment, which ignores duplicates\nby order identifier
   note over CMI : replaces that store's figures and\ncontinues from the snapshot's sequence\nposition (state resynchronization)
 end
 
