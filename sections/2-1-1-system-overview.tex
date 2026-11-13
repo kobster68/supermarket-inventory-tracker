@@ -21,8 +21,8 @@ reaches the \DC is outside the scope of this system.
 The store system keeps the store inventory, so that the store manager can read and change
 it when the link to the \DC is down. The central system keeps the master record of the
 stock in every store and in the \DC. The central system also sends the store events to a
-variable number of other clients. An external analytics client is a future client of this
-type.
+variable number of other clients, and it answers read-only queries about the inventory. An
+external analytics client is a future client of the query type.
 
 Products belong to product families, and a family can contain other families to any
 depth. A product may belong to more than one family, and the family-value report counts it

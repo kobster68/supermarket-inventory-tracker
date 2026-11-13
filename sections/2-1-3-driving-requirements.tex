@@ -41,9 +41,9 @@ names the parts of our solution.
   {A fault in the WAN link between a store and the \DC, which is part of the system's own deployment (Section~\ref{sec:allocation-view}).}
   {An omission fault: the store loses its WAN link to the \DC.}
   {The store-to-\DC link and the store system.}
-  {Normal operation; the store-to-\DC link is down for 30 minutes.}
-  {The store system keeps serving reads and updates against the store inventory, logs the fault, and keeps each outbound event for delivery when the link returns.}
-  {The store's inventory stays readable and updatable throughout; no outgoing event is lost; after the link returns every buffered event reaches the central system. The separate limit on a local-inventory service outage, no single outage over 30 minutes, is unchanged.}
+  {Normal operation; the store-to-\DC link is down for an outage of any length.}
+  {The store system keeps serving reads and updates against the store inventory, logs the fault, and keeps each outbound event for delivery when the link returns. When the link returns, the store system replays every buffered event. If its history is incomplete, because the buffer is full or the local history is lost, it sends a snapshot of its stock instead, and the central system replaces the figures for that store.}
+  {The store's inventory stays readable and updatable throughout. On the replay path, no outgoing event is lost and every buffered event reaches the central system. After a snapshot resync, the store and central figures for that store match. The separate limit on a local-inventory service outage, no single outage over 30 minutes, is unchanged.}
 
 \scenario{AV-2}
   {The store-to-\DC link or the central system (transient fault).}
@@ -58,8 +58,8 @@ names the parts of our solution.
   {The process that keeps the master record crashes.}
   {The master record and its database.}
   {Normal operation; stores keep sending events.}
-  {The central system keeps accepting and storing events. The process restarts and applies the events that it missed.}
-  {0 events lost; the master record is current again within 30 minutes; store operation stops for 0 seconds.}
+  {The central system keeps accepting and storing events. A standby copy of the master record, which is already current, takes over. The failed copy is rebuilt afterwards.}
+  {Query service resumes within seconds; 0 events lost; store operation stops for 0 seconds.}
 
 \scenario{PERF-1}
   {The POS system of one store.}
@@ -67,14 +67,14 @@ names the parts of our solution.
   {The store system.}
   {Normal operation, peak trading.}
   {The store system applies each event to the store inventory and keeps it for delivery to the \DC.}
-  {100 events per second sustained; each event is in the store inventory within 1 second.}
+  {100 events per second sustained; each event is in the store inventory within 1 second. This measure is for normal operation; \scnref{PERF-4} covers the surge of buffered events after an outage.}
 
 \scenario{PERF-2}
   {The store systems of ten stores.}
   {All stores send events at full rate: 1{,}000 events per second at the \DC.}
   {The central system and its consumers.}
   {Maximum scale: ten stores and one \DC.}
-  {The central system durably stores each event, confirms acceptance to the store, and delivers it to every consumer; each consumer confirms its processing progress.}
+  {The central system durably stores each event, confirms acceptance to the store, and delivers it to every consumer; each consumer confirms its processing progress. The confirmation says that the consumer has durably applied the event. Thus the central system can release the event safely, a consumer resumes from the correct place after a crash, and a slow consumer is visible.}
   {1{,}000 events per second sustained. Measured from the moment a store first transmits an event: durable central acceptance is confirmed to the store within 1 second at the 95th percentile, and every required consumer has processed and acknowledged the event within 5 seconds at the 95th percentile, including central queueing and delivery time. No queue at the central system grows without bound.}
 
 \scenario{PERF-3}
@@ -123,7 +123,7 @@ names the parts of our solution.
   {The store systems and the central system.}
   {Normal operation; stores are added one at a time.}
   {We deploy one configured store system for each new store. It sends events to the central system like the existing stores.}
-  {0 code changes to the central system or its clients; \scnref{PERF-2} still holds at ten stores.}
+  {0 code changes; one configuration entry and one provisioned store identity for each new store; \scnref{PERF-2} still holds at ten stores.}
 
 \scenario{SCAL-2}
   {A client developer.}
@@ -131,7 +131,7 @@ names the parts of our solution.
   {The central system.}
   {Normal operation at full load.}
   {The central system registers the client and sends it each new event.}
-  {0 central system restarts; 0 events lost to the existing clients; the new client receives the next event.}
+  {0 code changes and 0 central system restarts; one configuration entry and one provisioned client identity for the new client; 0 events lost to the existing clients; the new client receives the next event.}
 
 \scenario{USE-1}
   {A store manager who is new to the system.}
@@ -151,11 +151,11 @@ names the parts of our solution.
 
 \scenario{MOD-1}
   {A developer.}
-  {Adds a new client type that receives inventory alerts.}
-  {The new client, the exchange protocol and the central system.}
+  {Adds a new client type. The client either subscribes to inventory alerts or queries the inventory.}
+  {The new client, the exchange protocol, the read-only query interface and the central system.}
   {Design time.}
-  {The developer writes the client against the exchange protocol and connects it to the central system.}
-  {0 changed modules outside the new client; done in at most 5 person-days.}
+  {The developer writes a subscribing client against the exchange protocol, or a querying client against the read-only query interface, and connects it to the central system.}
+  {0 code changes outside the new client; one configuration entry and one provisioned client identity; done in at most 5 person-days.}
 
 \scenario{MOD-2}
   {A \DC manager or a developer.}
@@ -163,15 +163,15 @@ names the parts of our solution.
   {The product-family data and the reporting function.}
   {Runtime, as a data change.}
   {The system accepts the new level as data; the reports include it.}
-  {0 code changes; 100\% of family-value reports correct for the new level.}
+  {0 code changes and 0 configuration changes; 100\% of family-value reports correct for the new level.}
 
 \scenario{INT-1}
   {An analytics client developer.}
-  {Connects an external analytics client over the exchange protocol.}
-  {The exchange protocol and the central system.}
+  {Connects an external analytics client that queries the inventory.}
+  {The read-only query interface and the master record.}
   {Development time.}
-  {The developer writes the client against the exchange protocol and connects it, with no change to existing parts.}
-  {0 changes to existing parts; done in at most 10 person-days.}
+  {The developer writes the client against the read-only query interface and connects it. The client reads stock levels, families and totals; it cannot change the inventory.}
+  {0 code changes to existing parts; one configuration entry and one provisioned client identity; 100\% of write attempts by the client rejected; done in at most 10 person-days.}
 
 \scenario{INT-2}
   {Client developers.}
@@ -179,7 +179,7 @@ names the parts of our solution.
   {The central system and its delivery to clients.}
   {Normal operation at full load.}
   {Each client connects over the exchange protocol; the central system sends events to all of them.}
-  {With up to 10 clients, \scnref{PERF-2} still holds; 0 code changes to the central system.}
+  {With up to 10 clients, \scnref{PERF-2} still holds; 0 code changes to the central system; one configuration entry and one provisioned client identity for each client.}
 
 \scenario{TEST-1}
   {A tester.}
@@ -225,9 +225,9 @@ Scalability & Store growth & \scnref{SCAL-1} Three to ten stores & (H, M)\\\clin
  & Client growth & \scnref{SCAL-2} Client connects at runtime & (M, L)\\\hline
 Usability & Training effort for orders & \scnref{USE-1} Confirming a shipping order & (H, L)\\\cline{2-4}
  & Training effort for reports & \scnref{USE-2} Three report types & (H, L)\\\hline
-Modifiability & New client type & \scnref{MOD-1} New client type & (M, L)\\\cline{2-4}
+Modifiability & New client type & \scnref{MOD-1} New subscribing or querying client type & (M, L)\\\cline{2-4}
  & Product-family structure & \scnref{MOD-2} Extra nesting level & (M, M)\\\hline
-Integrability & External clients & \scnref{INT-1} External analytics client & (M, M)\\\cline{2-4}
+Integrability & External query clients & \scnref{INT-1} Read-only analytics query client & (M, M)\\\cline{2-4}
  & Alerting clients & \scnref{INT-2} Variable alerting clients & (M, L)\\\hline
 Testability & Delivery under loss & \scnref{TEST-1} Delivery under message loss & (M, M)\\\cline{2-4}
  & Recovery timing & \scnref{TEST-2} Recovery timing & (M, M)\\\hline
