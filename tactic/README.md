@@ -59,8 +59,20 @@ Each process is a self-contained jar (built with the Maven shade plugin):
 
 ## Run the demo
 
-TODO(Leon, #33; Godson, #34): `scripts/demo.sh` builds everything, runs the two-minute scripted
-fault demo, and prints the verdict table last. Until then it prints its phases and exits.
+```bash
+cd tactic
+bash scripts/demo.sh
+```
+
+The script builds the jars, clears `demo-data/` and `demo-logs/`, and starts the four processes
+in the background (master, CFE, fault link, store). It records each process ID in
+`demo-logs/<process>.pid` and writes each log to `demo-logs/<process>.log`. Then it runs the
+phases: normal running, a lossy link (drop 20%, duplicate 10%), a 30-second link cut, and a
+`kill -9` and restart of the store, the CFE and the master in turn. A restarted process uses the
+same ports and data folder. At the end the script stops every process with a plain `kill`.
+
+TODO(Godson, #34): the demo driver sends sales through every phase, and the verdict table
+replaces the raw `STATUS` lines that the script prints last.
 
 ## Run each process by hand
 
@@ -93,6 +105,9 @@ Port `0` asks for a free port; the `READY` line shows the port actually bound. D
 default to `demo-data/<process>` under the working folder; on Windows pass a relative path or a
 Windows path (`cygpath -w`), not a Git Bash path such as `/c/...`. `--source` is the store's
 identifier (default `store-1`).
+
+The fault link's drop and duplicate decisions come from a random source seeded with the system
+property `inventory.link.seed` (default 755).
 
 The retry settings are Java system properties, shared by the store and the CFE:
 
@@ -141,6 +156,11 @@ applied twice, stock match) and which are informational.
   refuses every event, and `UP` again on the first acknowledgement that moves accepted-through; a
   restarted store resumes after its last accepted sequence and never
   re-seeds. The tests compress the retry timings and assert outcomes, never retry counts.
+- `fault-link`, over its ports between a fake store and a fake CFE: every line is forwarded
+  unchanged and in order in both directions at zero; drop and duplicate rates are within
+  tolerance in both directions over a seeded run; a delay holds lines back and keeps their order;
+  `CUT` closes and refuses connections until `RESTORE`; `SET` changes `STATUS` and an out-of-range
+  value is refused; a store connection is closed when the CFE is down.
 - the Store Agent's sale transaction is also tested with a **test-only crash hook**, the one test
   that reaches past the wire: the package-private
   `StoreAgent.start(config, retry, failSalesAfterStockUpdate)` makes every sale fail after its
@@ -182,8 +202,28 @@ tactic/
 
 ### Modules and what they use
 
-TODO(Leon, #33): table and diagram of which module uses which. In short: every process module
-uses `protocol`; `system` uses all four process modules; nothing uses `system`.
+| Module | Uses | Used by |
+|---|---|---|
+| `protocol` | (no module) | every other module |
+| `store-agent` | `protocol` | system |
+| `fault-link` | `protocol` | system |
+| `cfe` | `protocol` | system |
+| `master-inventory` | `protocol` | system |
+| `system` | `protocol`, `store-agent`, `fault-link`, `cfe`, `master-inventory` | (no module) |
+
+```
+                              system
+            ┌──────────────┬────┴─────────┬──────────────────┐
+            ▼              ▼              ▼                  ▼
+       store-agent     fault-link        cfe         master-inventory
+            └──────────────┴──────┬───────┴──────────────────┘
+                                  ▼
+                              protocol
+```
+
+An arrow means "uses" (a Maven compile dependency). `system` also uses `protocol` directly. The
+four process modules do not use each other: they communicate only over TCP, with the message
+formats in `protocol`.
 
 ### Libraries and build tools
 
@@ -209,5 +249,27 @@ Java 21 (`maven.compiler.release`).
 
 ### External services and resources
 
-TODO(Leon, #33): no network service outside the four processes; each process's SQLite file and
-the ports it listens on and connects to; the shell tools the demo script needs, by name.
+The tactic uses no network service outside its four processes: no database server, no message
+broker, no internet access at run time. Maven downloads the libraries above from Maven Central
+at build time only. Each process uses the resources below. All ports are on `127.0.0.1` and are
+the defaults (see [Options](#options)).
+
+| Process | File | Listens on | Connects to |
+|---|---|---|---|
+| `store-agent` | `demo-data/store-agent/store-agent.db` (SQLite) | 7101 (sales), 7102 (control) | 7201 (fault link) |
+| `fault-link` | (no file) | 7201 (store), 7202 (control) | 7301 (CFE) |
+| `cfe` | `demo-data/cfe/cfe.db` (SQLite) | 7301 (fault link), 7302 (control) | 7401 (master) |
+| `master-inventory` | `demo-data/master-inventory/master-inventory.db` (SQLite) | 7401 (CFE), 7402 (control) | (none) |
+
+The SQLite JDBC driver also writes its native library to the Java temporary folder
+(`java.io.tmpdir`) at startup.
+
+`scripts/demo.sh` needs these tools:
+
+- bash 3.2 or later (Git Bash on Windows). Control commands use bash's `/dev/tcp`, so `nc` is not
+  needed.
+- Java 21 or later on the `PATH` (`java`).
+- Maven 3.9 or later on the `PATH` (`mvn`).
+- `kill` (with `-9` for the crash phases), `sleep`, `grep`, `sed`, `tr`, `cat`, `tail`, `rm` and
+  `mkdir`. Git Bash includes all of them.
+- `cygpath` on Windows is not needed: the script passes only paths relative to `tactic/`.
