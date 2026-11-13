@@ -81,15 +81,34 @@ class CfeDeliveryTest {
         assertEquals(1, publish(event("store-1", 3)).through());
         assertEquals(0, publish(event("store-2", 2)).through());
         // A known event ID must not be inserted under a new source or sequence either.
-        assertEquals(0, publish(new Publish(one.eventId(), "store-2", 1,
-                one.product(), one.delta(), one.timestamp())).through());
+        try (LineConnection store = connect()) {
+            store.send(new Publish(one.eventId(), "store-2", 1,
+                    one.product(), one.delta(), one.timestamp()));
+            assertInstanceOf(ErrorReply.class, store.receive());
+        }
         assertEquals(1, publish(event("store-2", 1)).through());
         assertEquals(2, publish(event("store-1", 2)).through());
         StatusReply s = status();
         assertEquals(3, s.number("stored"));
         assertEquals(2, s.number("acceptedThrough.store-1"));
         assertEquals(1, s.number("acceptedThrough.store-2"));
-        assertTrue(s.number("duplicatesReacked") >= 3);
+        assertEquals(2, s.number("duplicatesReacked"));
+    }
+
+    @Test
+    void reusedEventIdAtTheNextSequenceReturnsAnErrorWithoutAdvancing() throws Exception {
+        start(unusedPort(), FAST);
+        Publish one = event("store-1", 1);
+        publish(one);
+        try (LineConnection store = connect()) {
+            store.send(new Publish(one.eventId(), "store-1", 2,
+                    one.product(), one.delta(), one.timestamp()));
+            assertInstanceOf(ErrorReply.class, store.receive());
+        }
+        assertEquals(1, status().number("stored"));
+        assertEquals(1, status().number("acceptedThrough.store-1"));
+        assertEquals(0, status().number("duplicatesReacked"));
+        assertEquals(2, publish(event("store-1", 2)).through());
     }
 
     @Test
