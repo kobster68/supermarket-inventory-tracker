@@ -1,23 +1,5 @@
 package edu.rit.swen755.inventory.link;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import edu.rit.swen755.inventory.protocol.Cut;
-import edu.rit.swen755.inventory.protocol.FaultSetting;
-import edu.rit.swen755.inventory.protocol.Message;
-import edu.rit.swen755.inventory.protocol.Ok;
-import edu.rit.swen755.inventory.protocol.Restore;
-import edu.rit.swen755.inventory.protocol.SetFault;
-import edu.rit.swen755.inventory.protocol.StatusKeys;
-import edu.rit.swen755.inventory.protocol.StatusReply;
-import edu.rit.swen755.inventory.protocol.StatusRequest;
-import edu.rit.swen755.inventory.protocol.net.ControlClient;
-import edu.rit.swen755.inventory.protocol.net.Endpoints;
-import edu.rit.swen755.inventory.protocol.net.LineConnection;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -32,9 +14,28 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import edu.rit.swen755.inventory.protocol.Cut;
+import edu.rit.swen755.inventory.protocol.FaultSetting;
+import edu.rit.swen755.inventory.protocol.Message;
+import edu.rit.swen755.inventory.protocol.Ok;
+import edu.rit.swen755.inventory.protocol.Restore;
+import edu.rit.swen755.inventory.protocol.SetFault;
+import edu.rit.swen755.inventory.protocol.StatusKeys;
+import edu.rit.swen755.inventory.protocol.StatusReply;
+import edu.rit.swen755.inventory.protocol.StatusRequest;
+import edu.rit.swen755.inventory.protocol.net.ControlClient;
+import edu.rit.swen755.inventory.protocol.net.Endpoints;
+import edu.rit.swen755.inventory.protocol.net.LineConnection;
 
 /** The fault link between two fake endpoints: a fake store (this test) and a fake CFE. */
 class FaultLinkForwardingTest {
@@ -63,10 +64,12 @@ class FaultLinkForwardingTest {
         try (LineConnection store = connectStore()) {
             LineConnection cfeSide = cfe.nextConnection();
             List<String> lines = numbered("PUBLISH|store-1|", LINES);
+            
             for (String line : lines) {
                 store.writeLine(line);
                 cfeSide.writeLine(line.replace("PUBLISH", "ACK"));
             }
+
             assertEquals(lines, cfe.drain());
             assertEquals(lines.stream().map(l -> l.replace("PUBLISH", "ACK")).toList(), drain(store));
         }
@@ -78,6 +81,7 @@ class FaultLinkForwardingTest {
         try (LineConnection store = connectStore()) {
             LineConnection cfeSide = cfe.nextConnection();
             List<String> lines = numbered("x", LINES);
+            
             for (String line : lines) {
                 store.writeLine(line);
                 cfeSide.writeLine(line);
@@ -92,13 +96,16 @@ class FaultLinkForwardingTest {
     @Test
     void duplicateAddsAboutTheSetShareInBothDirections() throws Exception {
         assertOk(new SetFault(FaultSetting.DUPLICATE, 10));
+
         try (LineConnection store = connectStore()) {
             LineConnection cfeSide = cfe.nextConnection();
             List<String> lines = numbered("x", LINES);
+
             for (String line : lines) {
                 store.writeLine(line);
                 cfeSide.writeLine(line);
             }
+
             for (List<String> got : List.of(cfe.drain(), drain(store))) {
                 assertBetween(LINES * 105 / 100, LINES * 115 / 100, got.size());
                 assertEquals(lines, List.copyOf(new LinkedHashSet<>(got)), "every line, once or twice, in order");
@@ -109,6 +116,7 @@ class FaultLinkForwardingTest {
     @Test
     void delayHoldsLinesBackInBothDirectionsAndKeepsTheirOrder() throws Exception {
         assertOk(new SetFault(FaultSetting.DELAY, 300));
+       
         try (LineConnection store = connectStore()) {
             LineConnection cfeSide = cfe.nextConnection();
             long sent = System.nanoTime();
@@ -142,6 +150,7 @@ class FaultLinkForwardingTest {
 
         assertOk(new Restore());
         assertEquals("false", status().value(StatusKeys.FaultLink.CUT));
+
         try (LineConnection again = connectStore()) {
             again.writeLine("after restore");
             assertEquals("after restore", cfe.received.poll(5, TimeUnit.SECONDS));
@@ -165,6 +174,7 @@ class FaultLinkForwardingTest {
     @Test
     void aStoreConnectionIsClosedWhenTheCfeIsDown() throws Exception {
         cfe.close();
+
         try (LineConnection store = connectStore()) {
             assertClosed(store);
         }
@@ -188,6 +198,7 @@ class FaultLinkForwardingTest {
     private String rawControl(String line) throws IOException {
         try (Socket socket = Endpoints.connect(link.boundPorts().get("control"), 1_000)) {
             socket.getOutputStream().write((line + "\n").getBytes(StandardCharsets.UTF_8));
+
             return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
                     .readLine();
         }
@@ -198,6 +209,7 @@ class FaultLinkForwardingTest {
         for (int i = 1; i <= count; i++) {
             lines.add(prefix + i);
         }
+
         return lines;
     }
 
@@ -205,6 +217,7 @@ class FaultLinkForwardingTest {
     private static List<String> drain(LineConnection connection) throws IOException {
         connection.socket().setSoTimeout(QUIET_MILLIS);
         List<String> got = new ArrayList<>();
+        
         try {
             for (String line; (line = connection.readLine()) != null; ) {
                 got.add(line);
@@ -212,11 +225,13 @@ class FaultLinkForwardingTest {
         } catch (SocketTimeoutException e) {
             // quiet: done
         }
+
         return got;
     }
 
     private static void assertClosed(LineConnection connection) throws IOException {
         connection.socket().setSoTimeout(5_000);
+        
         try {
             assertNull(connection.readLine());
         } catch (SocketException e) {
@@ -230,10 +245,12 @@ class FaultLinkForwardingTest {
 
     private static void assertInOrderSubsetOf(List<String> all, List<String> some) {
         int i = 0;
+
         for (String line : some) {
             while (i < all.size() && !all.get(i).equals(line)) {
                 i++;
             }
+
             assertTrue(i < all.size(), line + " is out of order or not sent");
             i++;
         }
@@ -249,7 +266,6 @@ class FaultLinkForwardingTest {
         final ServerSocket server = Endpoints.listen(0);
         final BlockingQueue<LineConnection> connections = new LinkedBlockingQueue<>();
         final BlockingQueue<String> received = new LinkedBlockingQueue<>();
-        private final List<LineConnection> open = new ArrayList<>();
 
         FakeCfe() throws IOException {
             Thread accept = new Thread(this::acceptLoop, "fake-cfe-accept");
@@ -264,14 +280,17 @@ class FaultLinkForwardingTest {
         LineConnection nextConnection() throws InterruptedException {
             LineConnection c = connections.poll(5, TimeUnit.SECONDS);
             assertNotNull(c, "the link connected to the CFE");
+
             return c;
         }
 
         List<String> drain() throws InterruptedException {
             List<String> got = new ArrayList<>();
+            
             for (String line; (line = received.poll(QUIET_MILLIS, TimeUnit.MILLISECONDS)) != null; ) {
                 got.add(line);
             }
+
             return got;
         }
 
@@ -279,9 +298,6 @@ class FaultLinkForwardingTest {
             try {
                 while (true) {
                     LineConnection c = new LineConnection(server.accept());
-                    synchronized (open) {
-                        open.add(c);
-                    }
                     connections.add(c);
                     Thread reader = new Thread(() -> read(c), "fake-cfe-reader");
                     reader.setDaemon(true);
@@ -302,15 +318,11 @@ class FaultLinkForwardingTest {
             }
         }
 
+        /** Stops accepting. The link closes its own connections to this CFE. */
         @Override
         public void close() {
             try {
                 server.close();
-                synchronized (open) {
-                    for (LineConnection c : open) {
-                        c.close();
-                    }
-                }
             } catch (IOException ignored) {
                 // closed already
             }
