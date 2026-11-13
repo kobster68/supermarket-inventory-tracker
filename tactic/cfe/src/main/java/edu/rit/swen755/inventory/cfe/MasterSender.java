@@ -27,6 +27,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * Connections are closed before backoff; no event is removed from the log.
  */
 final class MasterSender {
+    // This small demo polls the database every 20 ms while idle (about 50 polls/s),
+    // including per-source event reads on an open connection; not intended for large source counts.
+    private static final long IDLE_POLL_MILLIS = 20;
     private final CfeDatabase database;
     private final RetrySettings retry;
     private final int port;
@@ -34,7 +37,9 @@ final class MasterSender {
     private final AtomicLong retriesSent = new AtomicLong();
     private final Map<String, Long> highestSent = new HashMap<>();
     private volatile boolean stopped;
+    private volatile boolean crashed;
     private volatile LineConnection connection;
+    private volatile Thread readerThread;
     private volatile String linkState = StatusKeys.LINK_UP;
     private int failures;
 
@@ -48,12 +53,14 @@ final class MasterSender {
 
     void start() { thread.start(); }
     String linkState() { return linkState; }
+    /**
+     * Informational retries within this sender instance. The sent high-water marks are in memory,
+     * so events resent for the first time after a restart are not counted as retries.
+     */
     long retriesSent() { return retriesSent.get(); }
 
     void stop() {
-        stopped = true;
-        closeQuietly(connection);
-        thread.interrupt();
+        requestStop();
         try {
             thread.join(2_000);
         } catch (InterruptedException e) {
@@ -61,11 +68,27 @@ final class MasterSender {
         }
     }
 
+    /** Fault injection closes the connection and interrupts both threads without joining them. */
+    void crash() {
+        crashed = true;
+        requestStop();
+    }
+
+    private void requestStop() {
+        stopped = true;
+        closeQuietly(connection);
+        thread.interrupt();
+        Thread reader = readerThread;
+        if (reader != null) {
+            reader.interrupt();
+        }
+    }
+
     private void run() {
         while (!stopped) {
             try {
                 if (database.positions().values().stream().noneMatch(p -> p.accepted() > p.delivered())) {
-                    Thread.sleep(20);
+                    Thread.sleep(IDLE_POLL_MILLIS);
                     continue;
                 }
                 try {
@@ -91,6 +114,11 @@ final class MasterSender {
     private void attempt() throws IOException, SQLException, InterruptedException {
         LineConnection c = new LineConnection(Endpoints.connect(port, (int) retry.ackTimeout().toMillis()));
         connection = c;
+        if (stopped) {
+            closeQuietly(c);
+            connection = null;
+            return;
+        }
         BlockingQueue<Object> replies = new ArrayBlockingQueue<>(retry.window() + 1);
         Object disconnected = new Object();
         Thread reader = new Thread(() -> {
@@ -118,6 +146,7 @@ final class MasterSender {
             }
         }, "cfe-master-acks");
         reader.setDaemon(true);
+        readerThread = reader;
         reader.start();
         try {
             Map<String, Long> delivered = new HashMap<>();
@@ -147,7 +176,7 @@ final class MasterSender {
                 if (idle && outstanding > 0) {
                     deadline = System.nanoTime() + retry.ackTimeout().toNanos();
                 }
-                long wait = outstanding == 0 ? TimeUnit.MILLISECONDS.toNanos(20)
+                long wait = outstanding == 0 ? TimeUnit.MILLISECONDS.toNanos(IDLE_POLL_MILLIS)
                         : Math.max(1, deadline - System.nanoTime());
                 Object reply = replies.poll(wait, TimeUnit.NANOSECONDS);
                 if (reply == disconnected) {
@@ -172,7 +201,10 @@ final class MasterSender {
             closeQuietly(c);
             connection = null;
             reader.interrupt();
-            reader.join(1_000);
+            if (!crashed) {
+                reader.join(1_000);
+            }
+            readerThread = null;
         }
     }
 
