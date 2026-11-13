@@ -85,10 +85,17 @@ final class CfeDatabase implements AutoCloseable {
         try {
             long through = position(event.source()).accepted();
             boolean duplicate = event.sequence() <= through;
-            try (PreparedStatement q = connection.prepareStatement("SELECT 1 FROM event_log WHERE event_id = ?")) {
+            try (PreparedStatement q = connection.prepareStatement(
+                    "SELECT source, sequence FROM event_log WHERE event_id = ?")) {
                 q.setString(1, event.eventId().toString());
                 try (ResultSet rs = q.executeQuery()) {
-                    duplicate |= rs.next();
+                    if (rs.next()) {
+                        if (!event.source().equals(rs.getString(1)) || event.sequence() != rs.getLong(2)) {
+                            throw new SQLException("event ID already belongs to source " + rs.getString(1)
+                                    + " at sequence " + rs.getLong(2));
+                        }
+                        duplicate = true;
+                    }
                 }
             }
             if (!duplicate && event.sequence() == through + 1) {
