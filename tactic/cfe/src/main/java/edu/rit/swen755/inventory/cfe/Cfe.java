@@ -115,7 +115,11 @@ public final class Cfe implements RunningProcess {
         if (ingressFirst && listener != null) {
             listener.close();
         }
-        sender.stop();
+        if (ingressFirst) {
+            sender.stop();
+        } else {
+            sender.crash();
+        }
         if (!ingressFirst && listener != null) {
             listener.close();
         }
