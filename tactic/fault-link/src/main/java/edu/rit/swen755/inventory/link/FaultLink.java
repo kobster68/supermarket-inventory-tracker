@@ -39,8 +39,6 @@ public final class FaultLink implements RunningProcess {
     static final long DEFAULT_SEED = 755L;
 
     private static final int CONNECT_TIMEOUT_MILLIS = 1_000;
-    /** How often a writer with nothing to write checks that its connection is still open. */
-    private static final int WRITER_POLL_MILLIS = 100;
 
     private final FaultLinkConfig config;
     private final Random random = new Random(Long.getLong("inventory.link.seed", DEFAULT_SEED));
@@ -129,19 +127,15 @@ public final class FaultLink implements RunningProcess {
             // The connection closed: the peer left, a CUT, or a crash.
         } finally {
             closeBoth(from, to); // the other direction then stops too
+            writer.interrupt(); // a closed socket does not wake a writer that waits for a delay
         }
     }
 
-    /** Writes each queued line when it is due, in queue order, until {@code to} closes. */
+    /** Writes each queued line when it is due, in queue order, until the pipe interrupts it. */
     private static void writeWhenDue(BlockingQueue<DelayedLine> queue, LineConnection to) {
         try {
-            while (!to.socket().isClosed()) {
-                DelayedLine next = queue.poll(WRITER_POLL_MILLIS, TimeUnit.MILLISECONDS);
-                
-                if (next == null) {
-                    continue;
-                }
-
+            while (true) {
+                DelayedLine next = queue.take();
                 long wait = next.due() - System.nanoTime();
 
                 if (wait > 0) {

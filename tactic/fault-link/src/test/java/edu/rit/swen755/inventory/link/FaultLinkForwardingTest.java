@@ -158,6 +158,21 @@ class FaultLinkForwardingTest {
     }
 
     @Test
+    void cutStopsWritersThatWaitForALongDelay() throws Exception {
+        assertOk(new SetFault(FaultSetting.DELAY, 60_000));
+        LineConnection store = connectStore();
+        LineConnection cfeSide = cfe.nextConnection();
+        store.writeLine("held");
+        cfeSide.writeLine("held");
+        // Each writer sleeps on its delayed line in TIMED_WAITING. An idle writer is in WAITING.
+        awaitWriters(Thread.State.TIMED_WAITING, 2);
+
+        assertOk(new Cut());
+        awaitWriters(null, 0);
+        store.close();
+    }
+
+    @Test
     void setChangesStatusAndAnOutOfRangeValueIsRefused() throws Exception {
         assertOk(new SetFault(FaultSetting.DROP, 5));
         assertOk(new SetFault(FaultSetting.DUPLICATE, 6));
@@ -254,6 +269,27 @@ class FaultLinkForwardingTest {
             assertTrue(i < all.size(), line + " is out of order or not sent");
             i++;
         }
+    }
+
+    /** Waits until {@code count} live writers are in {@code state} (any state if null). */
+    private static void awaitWriters(Thread.State state, int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long found;
+
+        do {
+            found = Thread.getAllStackTraces().keySet().stream()
+                    .filter(t -> t.getName().equals("fault-link-writer") && t.isAlive())
+                    .filter(t -> state == null || t.getState() == state)
+                    .count();
+
+            if (found == count) {
+                return;
+            }
+
+            Thread.sleep(20);
+        } while (System.nanoTime() < deadline);
+
+        assertEquals(count, found, "writers in state " + state);
     }
 
     private static long millisSince(long nanos) {
