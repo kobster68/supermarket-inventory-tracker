@@ -10,6 +10,7 @@ services (Bass, Clements, and Kazman 230). Version 2.0 replaces version 1.0's
 family-filter subscriptions and publisher-only acknowledgements; peers must agree
 on version and wire encoding. One ordered stream per source carries both message
 types; subscribers receive their authorized streams and filter locally, without topics.
+The \StoreSnapshot is a separate recovery message, not a stock-change event.
 
 \textbf{Messages.} Fields are case-sensitive; IDs are nonempty strings compared exactly.
 \begin{description}[nosep,leftmargin=1em,style=nextline]
@@ -24,9 +25,17 @@ Same \texttt{eventId}, \texttt{source}, \texttt{timestamp}, \texttt{sequence}, p
 (\DC ID), nonempty \texttt{lines} of product IDs and positive 64-bit quantities.
 The store raises it at minimum stock; manager confirmation queues it for
 \ShippingOrderFulfillment. Both types share one source sequence; retries preserve all fields.
+\item[\StoreSnapshot]
+Globally unique \texttt{snapshotId}, authenticated store source, stock per product,
+open shipping orders (every confirmed
+\ShippingOrder the \DC has not acknowledged), and the source sequence position of
+the consistent stock snapshot. Orders retain their identifiers and contents.
+Both master copies replace only that store's figures and resume after this position;
+\ShippingOrderFulfillment receives the orders and ignores duplicates by order ID.
 \item[\Acknowledgement]
 \texttt{kind=accepted}: \CFE returns \texttt{eventId}, \texttt{source}, \texttt{sequence} and
-\texttt{acceptedThrough} (highest contiguous persisted sequence).
+\texttt{acceptedThrough} (highest contiguous persisted sequence, or accepted snapshot boundary).
+Snapshot acceptance returns \texttt{snapshotId} instead of \texttt{eventId}.
 \texttt{kind=applied}: subscriber sends \texttt{subscriptionId}, \texttt{source},
 \texttt{appliedThrough}: every message through and including that sequence is
 durably processed or locally ignored for this source.
@@ -50,7 +59,8 @@ entry; expired identity records require \opResync, not reacceptance. Rejection n
 of its position and \texttt{acceptedThrough} before pruning. The \Outbox owns this
 position for a store; the \DCAgent owns its source's position.
 For an owned active subscription, \texttt{applied} durably advances the \CFE's cursor,
-never backwards or beyond the contiguous position sent to that subscription.
+never backwards or beyond the contiguous position sent to that subscription
+(a delivered recovery snapshot covers its missing sequence range).
 \item[\opSubscribe\texttt{(subscriberId, sourceFilter)}]
 Provisioned client opens an authorized receive channel. Persist/return subscription
 and \texttt{startAfter}, per-source accepted positions (zero if empty), initializing
@@ -70,6 +80,7 @@ only after processing/ignoring every returned message. Retries may duplicate del
 Authorized peer compares its durable nonnegative position with the returned
 watermarks: \texttt{acceptedThrough} and \texttt{earliestRetained} (first replayable sequence,
 or accepted position plus one), and subscriber \texttt{appliedThrough} when applicable.
+Publisher resync also reports the available \Outbox sequence range, or that it is empty.
 If returned acceptance is at least its saved position, the publisher saves it and retires pending
 messages at or below it, even if their original acknowledgement/identity record
 is unavailable; resend later messages unchanged. If local acknowledgement exceeds
@@ -77,7 +88,17 @@ is unavailable; resend later messages unchanged. If local acknowledgement exceed
 Subscriber replays after its local cursor,
 not a higher server cursor. Missing history requires snapshot/backup recovery.
 Store-local rebuilding uses its own log/snapshot and applied/appended positions first.
-Resync never resets stock or sequences.
+Resync itself never resets stock or sequences. If required publisher history is
+missing from the \Outbox, return \texttt{SNAPSHOT\_REQUIRED}; the store submits a
+\StoreSnapshot on the authenticated recovery channel. The \CFE durably records it
+only for that store during snapshot recovery, before acknowledgement and delivery
+to affected subscribers, including both masters
+and \ShippingOrderFulfillment. Install stock and its position atomically, then process
+later events in source order.
+Never roll back a newer applied position or reapply deltas covered by the snapshot;
+still deliver its open orders even when its stock position is already applied.
+Retries preserve the snapshot and order IDs. Resume publishing after its position
+only once the \CFE has durably accepted the recovery boundary.
 \end{description}
 
 \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.34\linewidth}>{\raggedright\arraybackslash}X@{}}
@@ -88,6 +109,7 @@ Resync never resets stock or sequences.
 \texttt{UNKNOWN\_PRODUCT} & Publish/replay references an unknown product.\\
 \texttt{UNKNOWN\_SUBSCRIBER}, \texttt{UNKNOWN\_SUBSCRIPTION} & Unprovisioned client or absent subscription/removal record; provision or correct ID.\\
 \texttt{INVALID\_CURSOR} & Subscriber position exceeds accepted/sent history. Publisher-ahead positions require resync.\\
+\texttt{SNAPSHOT\_REQUIRED} & Required publisher history is missing; submit a consistent \StoreSnapshot, then resume after its accepted position.\\
 \texttt{HISTORY\_EXPIRED}, \texttt{RECOVERY\_REQUIRED} & Missing history/identity: publisher reconciles durable acceptance with \opResync; subscriber restores consistent state if required replay history is unavailable. Never reaccept an unverifiable old message.\\
 \end{tabularx}
 
@@ -100,10 +122,12 @@ Transient retry differs from invalid-input correction (Bass, Clements, and Kazma
 Never discard unacknowledged messages. \Outbox pruning follows saved \CFE acceptance,
 without deleting separate local recovery history. The \CFE prunes only after every
 active subscription covering that source and message has acknowledged through its
-sequence (inclusively), then a further 60 minutes from the last required acknowledgement.
-Without relevant subscriptions, time starts at acceptance; new subscriptions cover
+sequence (inclusively), with no extra retention window. Without relevant subscriptions,
+an accepted message is eligible for pruning immediately; new subscriptions cover
 only positions after \texttt{startAfter}. Disconnected subscriptions pin unread history.
-Pruning reclaims storage; stalled clients trigger backpressure, not silent deletion.
+Acknowledgements follow durable subscriber commits; a failed master copies consistent
+state and positions from the surviving master before replay, and a store with missing
+history uses the snapshot path. Stalled clients trigger backpressure, not silent deletion.
 Retain identity records throughout replay/retry history. Isolate slow clients;
 \texttt{BUSY} rejects excess admission, and full Outboxes reject local updates atomically.
 
@@ -113,8 +137,10 @@ including in-\DC peers, use TLS 1.3 with mutual certificates, provisioned trust/
 and source/subscription authorization; in-process calls retain the authenticated
 service identity. Direct database access is restricted to authorized service identities;
 manager-facing queries enforce their assigned scope (\scnref{SEC-1}).
-The \AnalyticsClient may read, replay, resync
-and acknowledge its own subscription, but cannot publish or modify stock/orders.
+The \AnalyticsClient is not an \IEP subscriber: it uses only the read-only
+\InventoryQuery (Table~\ref{tab:cc-connectors}). Network query connections, including
+in-\DC connections and failover, use TLS 1.3 with mutual certificates; the interface
+authorizes and rate-limits each client. Analytics cannot publish or modify stock/orders.
 
 \textbf{Limits and rationale.} Required live load is 100 events/s/store for ten stores;
 decided catch-up capacity is 2{,}000/s per recovering store while live sales continue.
@@ -132,7 +158,7 @@ advances Outbox acceptance to 41; fan-out follows; subscribers commit and acknow
 Outage: buffer 42--43 locally; after reconnect, \opResync returns accepted 41.
 Publisher \opReplay sends 42--43 for persistence/acknowledgement/fan-out. A crashed
 subscriber instead compares watermarks and replays after its local applied cursor;
-identical retries are harmless. CFE pruning still waits for every required cursor plus 60 minutes.
+identical retries are harmless. CFE pruning waits only for every required durable cursor.
 
 \begin{sloppypar}
 \textbf{Coverage.} \scnref{AV-1}, \scnref{AV-2}, \scnref{TEST-1}: durable retry,
