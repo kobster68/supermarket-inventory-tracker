@@ -158,17 +158,24 @@ class FaultLinkForwardingTest {
     }
 
     @Test
-    void cutStopsWritersThatWaitForALongDelay() throws Exception {
-        assertOk(new SetFault(FaultSetting.DELAY, 60_000));
-        LineConnection store = connectStore();
-        LineConnection cfeSide = cfe.nextConnection();
-        store.writeLine("held");
-        cfeSide.writeLine("held");
-        // Each writer sleeps on its delayed line in TIMED_WAITING. An idle writer is in WAITING.
-        awaitWriters(Thread.State.TIMED_WAITING, 2);
+    void cutStopsWritersThatWaitForALongDelayAndDeliversNothing() throws Exception {
+        LineConnection store = queueDelayedTrafficBothWays();
 
         assertOk(new Cut());
-        awaitWriters(null, 0);
+        assertWritersStopPromptly();
+        assertClosed(store); // the delayed CFE line never reaches the store
+        assertNull(cfe.received.poll(QUIET_MILLIS, TimeUnit.MILLISECONDS), "nothing reaches the CFE after the cut");
+        store.close();
+    }
+
+    @Test
+    void closeStopsWritersThatWaitForALongDelayAndDeliversNothing() throws Exception {
+        LineConnection store = queueDelayedTrafficBothWays();
+
+        link.close();
+        assertWritersStopPromptly();
+        assertClosed(store);
+        assertNull(cfe.received.poll(QUIET_MILLIS, TimeUnit.MILLISECONDS), "nothing reaches the CFE after close");
         store.close();
     }
 
@@ -271,25 +278,44 @@ class FaultLinkForwardingTest {
         }
     }
 
-    /** Waits until {@code count} live writers are in {@code state} (any state if null). */
-    private static void awaitWriters(Thread.State state, int count) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    /** Sets a long delay and sends a line each way, so that both writers sleep on a line. */
+    private LineConnection queueDelayedTrafficBothWays() throws Exception {
+        assertOk(new SetFault(FaultSetting.DELAY, 30_000));
+        LineConnection store = connectStore();
+        LineConnection cfeSide = cfe.nextConnection();
+        store.writeLine("held");
+        cfeSide.writeLine("held");
+        // Each writer sleeps on its delayed line in TIMED_WAITING. An idle writer is in WAITING.
+        assertEquals(2, awaitWriters(Thread.State.TIMED_WAITING, 2), "writers sleeping on a delay");
+
+        return store;
+    }
+
+    /** Within 2 seconds no writer thread of the link is alive. */
+    private void assertWritersStopPromptly() throws InterruptedException {
+        assertEquals(0, awaitWriters(null, 0), "live writer threads");
+        assertEquals(0, link.liveWriterCount(), "writers the link still tracks");
+    }
+
+    /** Waits up to 2 seconds until {@code count} live writers are in {@code state} (any if null). */
+    private static long awaitWriters(Thread.State state, int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         long found;
 
         do {
             found = Thread.getAllStackTraces().keySet().stream()
-                    .filter(t -> t.getName().equals("fault-link-writer") && t.isAlive())
+                    .filter(t -> t.getName().equals(FaultLink.WRITER_THREAD_NAME) && t.isAlive())
                     .filter(t -> state == null || t.getState() == state)
                     .count();
 
             if (found == count) {
-                return;
+                return found;
             }
 
             Thread.sleep(20);
         } while (System.nanoTime() < deadline);
 
-        assertEquals(count, found, "writers in state " + state);
+        return found;
     }
 
     private static long millisSince(long nanos) {
