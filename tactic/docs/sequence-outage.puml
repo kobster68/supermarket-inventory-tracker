@@ -1,0 +1,26 @@
+@startuml sequence-outage
+skinparam shadowing false
+participant "POS\n(demo driver)" as POS
+participant "Store Agent" as S
+participant "Fault link" as L
+participant "CFE" as C
+participant "Master" as M
+
+== link cut, or an event or acknowledgement dropped ==
+POS -> S : SALE (sequences n+1 .. n+k)
+S --> POS : OK (each committed locally; the link is not needed)
+S -x L : PUBLISH n+1 .. (lost)
+note over S : no progress within 500 ms: reconnect after backoff\n100 ms, 200 ms, ... 2 s (plus up to 20% jitter)
+S -x L : resend after acceptedThrough n (refused while cut)
+note over S : after 10 failed attempts: linkState=DOWN,\nevery event kept, probing every 2 s
+
+== link restored ==
+S -> L : PUBLISH n+1 .. n+k (original event IDs, in sequence order)
+L -> C : PUBLISH n+1 .. n+k, some lines twice
+C -> C : store each once (log row and acceptedThrough in one transaction);\nre-acknowledge a duplicate without a new row
+C --> S : ACK|accepted|store-1|n+k (cumulative)
+note over S : linkState=UP
+C -> M : PUBLISH n+1 .. n+k (resent after deliveredThrough on failure)
+M -> M : apply each once;\nduplicate by ID or sequence ignored
+M --> C : ACK|applied|store-1|n+k
+@enduml

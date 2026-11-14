@@ -1,0 +1,78 @@
+@startuml class-diagram
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+hide empty members
+
+package protocol {
+  interface Message
+  class LineCodec
+  class RetrySettings
+  class StatusKeys
+  interface RunningProcess {
+    +boundPorts()
+    +crash()
+    +close()
+  }
+  class LineServer
+  class LineConnection
+}
+
+package "store-agent" {
+  class StoreAgent
+  class StoreDatabase {
+    sale: stock and Outbox row, one transaction
+  }
+  class OutboxSender
+}
+
+package "fault-link" {
+  class FaultLink
+}
+
+package cfe {
+  class Cfe
+  class CfeDatabase {
+    accept: log row and acceptedThrough, one transaction
+  }
+  class MasterSender
+}
+
+package "master-inventory" {
+  class MasterInventory
+  class MasterDatabase {
+    apply: stock, applied record and cursor, one transaction
+  }
+}
+
+package system {
+  class SystemHarness
+  class DemoDriver
+  class Verdict
+  class SalesClient
+}
+
+StoreAgent ..|> RunningProcess
+FaultLink ..|> RunningProcess
+Cfe ..|> RunningProcess
+MasterInventory ..|> RunningProcess
+StoreAgent --> StoreDatabase
+StoreAgent --> OutboxSender
+OutboxSender --> RetrySettings
+Cfe --> CfeDatabase
+Cfe --> MasterSender
+MasterSender --> RetrySettings
+MasterInventory --> MasterDatabase
+StoreAgent --> LineServer
+Cfe --> LineServer
+MasterInventory --> LineServer
+FaultLink --> LineServer
+LineServer --> LineConnection
+LineConnection --> LineCodec
+LineCodec --> Message
+SystemHarness --> RunningProcess
+SystemHarness --> Verdict
+SystemHarness --> SalesClient
+DemoDriver --> SalesClient
+DemoDriver --> Verdict
+Verdict --> StatusKeys
+@enduml
