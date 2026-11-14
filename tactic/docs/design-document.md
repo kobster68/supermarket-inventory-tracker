@@ -51,8 +51,24 @@ TODO(Godson, #34): the module uses diagram, repeated from the README's Dependenc
 
 ### 4.2 Fault link (owner: Leon Letournel)
 
-TODO(Leon, #33): forwarding in both directions; drop, duplicate, delay, cut and restore; the
-seeded random source.
+- **Forwarding.** For each connection from the store, the link opens one connection to the CFE.
+  It forwards each line in both directions without a change, so acknowledgements get the same
+  faults as events. If the CFE is not reachable, the link closes the store's connection, and the
+  store reconnects after its backoff.
+- **Threads and order.** Each direction has a reader thread and a writer thread. The reader
+  decides the fate of each line and puts it in a queue with its due time. The writer writes each
+  line at its due time, in queue order. Thus a delay never changes the order of lines.
+- **Drop and duplicate.** `SET|drop|<0-100>` drops that percentage of lines. `SET|duplicate|<0-100>`
+  forwards that percentage of the remaining lines twice. Both decisions use one `java.util.Random`
+  seeded with the system property `inventory.link.seed` (default 755).
+- **Delay.** `SET|delay|<ms>` holds each new line for that time before the writer sends it. The
+  reader continues to read, so a delay does not decrease the throughput.
+- **Cut and restore.** `CUT` closes every open connection on both sides. Until `RESTORE`, the link
+  accepts each new store connection and closes it at once. Lines that are in a queue when a
+  connection closes are lost, as on a broken network link.
+- **Replies.** Each control command gets `OK`, or `ERR|reason` for a bad command or value.
+  `STATUS` reports the current settings. The link has no storage, so a restart sets all of them
+  to zero.
 
 ### 4.3 Communications Front-End (owner: Kobe LaPrade)
 
