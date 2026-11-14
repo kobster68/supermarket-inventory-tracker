@@ -192,8 +192,12 @@ crash_and_restart master-inventory
 sleep 10
 
 phase "stop the demo driver"
-kill "${DRIVER_PID}"
-await_exit "${DRIVER_PID}"
+# A driver that already exited must not end the script (set -e) before the verdict.
+if kill "${DRIVER_PID}" 2>/dev/null; then
+  await_exit "${DRIVER_PID}"
+else
+  echo "demo: the driver had already stopped; see ${LOG_DIR}/driver.log" >&2
+fi
 tail -n 1 "${LOG_DIR}/driver.log"
 
 phase "drain and verdict"
