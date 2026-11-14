@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,7 +27,6 @@ import org.junit.jupiter.api.io.TempDir;
  * applied twice 0, and store and master stock equal for every product. Informational counters are
  * never asserted, since thread and socket timing vary between runs.
  */
-@Disabled("TODO(Godson, #34): enable in the integration PR, once all four processes are merged")
 @Timeout(180)
 class EndToEndTest {
 

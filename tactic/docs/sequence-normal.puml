@@ -1,0 +1,25 @@
+@startuml sequence-normal
+skinparam shadowing false
+participant "POS\n(demo driver)" as POS
+participant "Store Agent" as S
+database "store SQLite" as SDB
+participant "Fault link" as L
+participant "CFE" as C
+database "CFE SQLite" as CDB
+participant "Master" as M
+database "master SQLite" as MDB
+
+POS -> S : SALE|P3|2
+S -> SDB : BEGIN; stock.P3 -= 2;\ninsert Outbox row (id, seq n); COMMIT
+S --> POS : OK|id|n
+S -> L : PUBLISH|id|store-1|n|P3|-2|ts
+L -> C : PUBLISH (unchanged)
+C -> CDB : BEGIN; insert log row;\nacceptedThrough = n; COMMIT
+C --> L : ACK|accepted|store-1|n
+L --> S : ACK|accepted|store-1|n
+S -> SDB : mark rows up to n accepted
+C -> M : PUBLISH|id|store-1|n|P3|-2|ts
+M -> MDB : BEGIN; stock.store-1.P3 -= 2;\nrecord id; appliedThrough = n; COMMIT
+M --> C : ACK|applied|store-1|n
+C -> CDB : deliveredThrough = n
+@enduml

@@ -127,6 +127,10 @@ status_value() {
 # Stops every process that is still running: a plain kill, so each closes its database cleanly.
 stop_all() {
   local name pid
+  if [ -n "${DRIVER_PID:-}" ] && kill -0 "${DRIVER_PID}" 2>/dev/null; then
+    kill "${DRIVER_PID}" 2>/dev/null || true
+    await_exit "${DRIVER_PID}"
+  fi
   for name in ${PROCESSES}; do
     [ -f "${LOG_DIR}/${name}.pid" ] || continue
     pid="$(pid_of "${name}")"
@@ -148,8 +152,12 @@ for name in ${PROCESSES}; do
   start "${name}"
 done
 
-# TODO(Godson, #34): start the demo driver here, in the background, sending seeded sales (about
-# 50 per second) to the store's sales port through every phase below, and stop it before "drain".
+# The demo driver is the point-of-sale feed: seeded sales at about 50 per second through every
+# phase below, stopped before the drain. A sale that gets no reply is not retried.
+java -jar system/target/system.jar sell --rate 50 --seed 1 >>"${LOG_DIR}/driver.log" 2>&1 &
+DRIVER_PID=$!
+disown "${DRIVER_PID}"
+echo "started demo driver (pid ${DRIVER_PID}): seeded sales at 50 per second"
 
 phase "normal running"
 sleep 15
@@ -165,31 +173,35 @@ phase "link cut for 30 seconds while sales continue"
 link "CUT"
 sleep 30
 link "RESTORE"
+# The store's informational counters live in memory and restart from zero when the store is
+# killed below, so they are printed here, right after the cut.
+echo "store after the cut: salesWhileDown=$(status_value store-agent salesWhileDown)" \
+  "linkDownEpisodes=$(status_value store-agent linkDownEpisodes)" \
+  "retriesSent=$(status_value store-agent retriesSent)"
 
 phase "store killed and restarted"
 crash_and_restart store-agent
+sleep 10
 
 phase "CFE killed and restarted"
 crash_and_restart cfe
+sleep 10
 
 phase "master killed and restarted"
 crash_and_restart master-inventory
+sleep 10
 
-phase "drain: wait until the store has nothing pending and the master has applied everything"
-waited=0
-until [ "$(status_value store-agent pending)" = "0" ]; do
-  if [ "${waited}" -ge 60 ]; then
-    echo "demo: the store still has events pending after 60 s" >&2
-    break
-  fi
-  sleep 1
-  waited=$((waited + 1))
-done
-# TODO(Godson, #34): also wait until the master has applied everything the store created.
+phase "stop the demo driver"
+kill "${DRIVER_PID}"
+await_exit "${DRIVER_PID}"
+tail -n 1 "${LOG_DIR}/driver.log"
 
-phase "verdict"
-# TODO(Godson, #34): read STATUS from store, CFE and master and print the verdict table; exit 1
-# unless the run passed. Until then the raw STATUS lines are printed.
-for name in store-agent cfe master-inventory; do
-  echo "${name}: $(control "${name}" STATUS)"
-done
+phase "drain and verdict"
+# The driver polls STATUS until the store has nothing pending, the CFE has delivered everything it
+# accepted, and the master has applied everything the CFE accepted (or the drain timeout passes),
+# then prints the verdict table from durable STATUS keys and exits 1 unless the run passed.
+set +e
+java -jar system/target/system.jar verdict --drain-timeout-seconds "${DRAIN_TIMEOUT_SECONDS:-120}"
+verdict_status=$?
+set -e
+exit "${verdict_status}"

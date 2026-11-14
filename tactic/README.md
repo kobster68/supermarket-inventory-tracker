@@ -24,9 +24,7 @@ The design document is [`docs/design-document.md`](docs/design-document.md).
 
 ## Status and owners
 
-Every process starts, binds its ports and answers `STATUS`, and the shared contract in `protocol`
-is complete. The Store Agent records sales and runs its Outbox (#30). Tactic behaviour still to
-come is marked `TODO(<owner>, #<issue>)` in the code.
+All four processes, the demo driver, the verdict table and the end-to-end tests are in place.
 
 | Part | Owner | Reviewer | Issue |
 |---|---|---|---|
@@ -55,7 +53,7 @@ mvn -B verify      # compile, run the tests, build the executable jars
 
 Each process is a self-contained jar (built with the Maven shade plugin):
 `store-agent/target/store-agent.jar`, `fault-link/target/fault-link.jar`, `cfe/target/cfe.jar`,
-`master-inventory/target/master-inventory.jar`.
+`master-inventory/target/master-inventory.jar`. The demo driver is `system/target/system.jar`.
 
 ## Run the demo
 
@@ -69,10 +67,15 @@ in the background (master, CFE, fault link, store). It records each process ID i
 `demo-logs/<process>.pid` and writes each log to `demo-logs/<process>.log`. Then it runs the
 phases: normal running, a lossy link (drop 20%, duplicate 10%), a 30-second link cut, and a
 `kill -9` and restart of the store, the CFE and the master in turn. A restarted process uses the
-same ports and data folder. At the end the script stops every process with a plain `kill`.
+same ports and data folder.
 
-TODO(Godson, #34): the demo driver sends sales through every phase, and the verdict table
-replaces the raw `STATUS` lines that the script prints last.
+Through every phase the demo driver (`java -jar system/target/system.jar sell`) acts as the point
+of sale: seeded sales of `P1` to `P5`, quantity 1 to 3, about 50 per second. A sale that gets no
+reply (the store is down) is not retried. After the last phase the script stops the driver and
+runs `java -jar system/target/system.jar verdict`, which waits at the drain gate and prints the
+verdict table last. The script exits 0 if the run passed and 1 if it did not. The drain timeout
+is 120 seconds; set `DRAIN_TIMEOUT_SECONDS` to change it. The driver's own log is
+`demo-logs/driver.log`. At the end the script stops every process with a plain `kill`.
 
 ## Run each process by hand
 
@@ -136,8 +139,26 @@ restarted on the same port at once.
 
 ## How to read the verdict table
 
-TODO(Godson, #34): each row of the verdict table, which numbers decide pass or fail (lost,
-applied twice, stock match) and which are informational.
+The verdict is read only from durable `STATUS` keys, after the drain gate.
+
+- **drain gate**: passed when the store has 0 `pending`, the CFE's `deliveredThrough` equals its
+  `acceptedThrough`, and the master's `appliedThrough` equals the CFE's `acceptedThrough`. If the
+  drain timeout passes first, the run fails and the line says so.
+- **events created at the store** (store `created`) and **events applied at the master** (master
+  `applied`).
+- **AV-2 response measure**, one line per clause with its number: *100% of store events reach the
+  DC* (applied as a percentage of created, with lost = created - applied); *0 events lost*
+  (lost); *0 events applied twice* (master `appliedTwice`).
+- **additional cross-check**: store `stock.Pn` equals master `stock.store-1.Pn` for every product,
+  with both numbers per product.
+- **informational**: sales while the link was down, retries sent by the store and the CFE,
+  duplicates ignored by the CFE and the master, link-down episodes. These are kept in memory and
+  start from zero when a process restarts, so they never decide pass or fail.
+
+The run passes only if the drain gate passed, lost is 0, applied twice is 0 and the stock
+matches. The last line is then `PASS  100% of store events reach the DC; 0 events lost; 0 events applied
+twice`, the AV-2 measure word for word, with each clause's number in the table above it; otherwise
+the last line starts with `FAIL` and gives the numbers.
 
 ## Tests
 
@@ -172,7 +193,9 @@ applied twice, stock match) and which are informational.
   the same data on disk as after a kill at a transaction boundary, but no hot journal is left for
   SQLite to recover. The demo script's `kill -9` covers a real process kill and that recovery. The
   end-to-end tests (lossy link, duplicates, link cut, store crash, CFE crash, master crash,
-  combined run) are written and disabled until the integration pull request (#34).
+  combined run) drive seeded sales through each fault with compressed retry timings, pass the
+  drain gate (60-second timeout) and assert only the guarantees: lost 0, applied twice 0, stock
+  matches.
 
 ## The shared contract
 
@@ -193,9 +216,9 @@ tactic/
   fault-link/        fault link process
   cfe/               Communications Front-End process
   master-inventory/  Central Master Inventory process
-  system/            in-JVM harness and the end-to-end tests
+  system/            in-JVM harness, demo driver and verdict, end-to-end tests
   scripts/           demo.sh, check-readme-dependencies.sh
-  docs/              design document
+  docs/              design document, its PlantUML diagrams and PDF
 ```
 
 ## Dependencies

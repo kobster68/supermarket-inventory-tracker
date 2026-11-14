@@ -1,99 +1,136 @@
-# Store Inventory tactic: design document
+---
+title: "Store Inventory tactic: design document"
+geometry: margin=2cm
+---
 
-Transactions and Retry for scenario AV-2. Each process owner writes their own section; Godson
-assembles the document, adds the diagrams, and exports it to PDF with pandoc (target 5 to 8
-pages). For long-form rationale this document points to the architecture document.
+We implement one pattern, a **transactional outbox with an idempotent consumer**, for scenario
+AV-2. For long-form rationale this document points to our architecture document.
 
-## 1. The scenario: AV-2
+## Scenario and tactics
 
-TODO(Godson, #34): AV-2 quoted from the architecture document, with its rating, and the response
-measure the verdict checks: "100% of store events reach the DC; 0 events lost; 0 events applied
-twice."
+- **AV-2, rated (H, H).** Source: the store-to-DC link or the central system (transient fault).
+  Stimulus: an event, or the confirmation of its receipt, is lost between a store and the central
+  system. Response: the store keeps the event and sends it again with its original identifier
+  until the central system confirms it; the central system discards duplicates by event
+  identifier. Response measure: **"100% of store events reach the DC; 0 events lost; 0 events
+  applied twice."**
+- **Transactions** (*Software Architecture in Practice*, 4th ed., p. 61): the book's tactic gives
+  the exchange of messages between distributed components the ACID properties, so a step either
+  happens completely or not at all. In our code every state change that matters is one SQLite
+  transaction, and a process acknowledges only after its transaction commits.
+- **Retry** (p. 60): the book's tactic assumes the fault that caused a failure is transient, so
+  repeating the operation may succeed. Our two senders (store to CFE, CFE to master) resend every
+  unacknowledged event with its original ID until it is acknowledged; the receivers make the
+  resend safe by ignoring what they already hold.
+- **Interface implemented** from the architecture document: publish, cumulative `accepted` and
+  `applied` acknowledgements, the event identity and the per-source sequence. **Not implemented**:
+  subscribe, replay-from-sequence, resync, topics and retention. For these faults, resending
+  everything after the receiver's last acknowledged position plays the role our document gives to
+  replay.
 
-## 2. The tactics
+## Classes
 
-TODO(Godson, #34): Transactions (*Software Architecture in Practice*, 4th ed., p. 61) and Retry
-(p. 60), each with the book's definition and where it lives in our code. Which parts of the
-architecture document's interface are implemented (publish, cumulative accepted and applied
-acknowledgements, event identity and per-source sequence) and which are not (subscribe,
-replay-from-sequence, resync, topics, retention), and why resending after the last
-acknowledgement plays the role replay plays in the document for these faults.
+![Main classes in each process and protocol](class-diagram.png){width=100%}
 
-## 3. Modules and what they use
+## Normal path and outage-and-resend path
 
-TODO(Godson, #34): the module uses diagram, repeated from the README's Dependencies section.
+![Normal path: one sale from the point of sale to the master](sequence-normal.png){width=100%}
 
-## 4. The processes and their transaction boundaries
+![Outage and resend: link cut, drops and duplicates](sequence-outage.png){width=100%}
 
-### 4.1 Store Agent (owner: Godson Umoren)
+## Implementation decisions
 
-- **Transaction boundary.** One SQLite transaction per sale: subtract the quantity from the
-  product's stock, insert the Outbox row (new event ID, the next sequence number, product,
-  `delta` = −quantity, UTC timestamp, not yet accepted) and advance the sequence. Only after the
-  commit does the store answer `OK|eventId|sequence`. A failure anywhere rolls back all three, so
-  stock and Outbox never disagree and no sequence number is used up or reused. Sales are accepted
-  whether or not the link is up.
-- **Outbox sender (Retry).** Sends events after the accepted-through position in sequence order,
-  at most 100 unacknowledged. Each `ACK|accepted|source|through` is cumulative: it marks every row
-  up to `through` accepted in SQLite; a stale or duplicate acknowledgement never moves the position
-  backwards. With no progress within 500 ms (counted from the first send of a burst or the
-  position's last move), or when the connection fails, the store reconnects
-  after a backoff (100 ms doubling to 2 s, up to 20% jitter) and resends everything after the
-  position with the original event IDs.
-- **Link down.** After 10 consecutive failed attempts the store sets `linkState=DOWN`, logs it and
-  counts a link-down episode. It keeps every event and keeps probing every 2 s; the first
-  acknowledgement that moves accepted-through sets it `UP`. An acknowledgement that only repeats
-  accepted-through (the CFE refusing an event beyond a gap) is not progress: it neither resets the
-  count nor sets the link `UP`, so a CFE that answers but accepts nothing is marked `DOWN` too.
-- **Restart.** The accepted flag is durable, so a restarted store sends from accepted-through + 1
-  and asks the CFE nothing; the CFE's contiguity rule and cumulative acknowledgements realign both
-  sides. Initial stock is seeded once, when the file is created.
+**Transaction boundary in each process**
 
-### 4.2 Fault link (owner: Leon Letournel)
+- **Store Agent** (Godson Umoren). One SQLite transaction per sale: subtract the quantity from the
+  product's stock, insert the Outbox row (new event ID, next sequence number, product,
+  `delta` = -quantity, UTC timestamp, not yet accepted) and advance the sequence. Only after the
+  commit does the store answer `OK|eventId|sequence`, so stock and Outbox never disagree and no
+  sequence number is used up or reused. Sales are accepted whether or not the link is up. Each
+  cumulative `ACK|accepted|source|through` marks rows up to `through` accepted; a stale or
+  duplicate acknowledgement never moves the position back. A restarted store sends from
+  accepted-through + 1 and asks the CFE nothing. Initial stock is seeded once, when the file is
+  created.
+- **Fault link** (Leon Letournel). Forwards each line in both directions unchanged, so
+  acknowledgements get the same faults as events. A reader thread decides each line's fate and a
+  writer thread sends it at its due time in queue order, so a delay never reorders lines.
+  `SET|drop|<0-100>`, `SET|duplicate|<0-100>` and `SET|delay|<ms>` use one `java.util.Random`
+  seeded by `inventory.link.seed` (default 755). `CUT` closes every connection and refuses new ones
+  until `RESTORE`; queued lines are lost, as on a broken network. The link has no storage.
+- **CFE** (Kobe LaPrade). The event-log row and its source's accepted-through position commit in
+  one transaction, and only then does the CFE send `ACK|accepted|source|through`. It accepts only
+  the next contiguous sequence per source; an ID it already holds, or a sequence at or below
+  accepted-through, is re-acknowledged without another row; an event beyond a gap is not stored
+  and the reply gives the current position. It forwards stored events to the master in sequence
+  order, and only an advancing cumulative `ACK|applied` moves durable delivered-through. On restart
+  it resumes from delivered-through + 1.
+- **Master** (Mike Andrews). `MasterDatabase.apply` adds the event's signed `delta` to stock,
+  records its ID and source sequence, and advances the cursor in one transaction; the
+  `ACK|applied` goes out after the commit. A recorded ID or a sequence at or below the cursor
+  returns the saved position and counts in `duplicatesIgnored`; an event ahead of the next sequence
+  returns the current position so the CFE resends the missing ones. Stock starts at 1,000,000 per
+  product once, when the database is created.
 
-- **Forwarding.** For each connection from the store, the link opens one connection to the CFE.
-  It forwards each line in both directions without a change, so acknowledgements get the same
-  faults as events. If the CFE is not reachable, the link closes the store's connection, and the
-  store reconnects after its backoff.
-- **Threads and order.** Each direction has a reader thread and a writer thread. The reader
-  decides the fate of each line and puts it in a queue with its due time. The writer writes each
-  line at its due time, in queue order. Thus a delay never changes the order of lines.
-- **Drop and duplicate.** `SET|drop|<0-100>` drops that percentage of lines. `SET|duplicate|<0-100>`
-  forwards that percentage of the remaining lines twice. Both decisions use one `java.util.Random`
-  seeded with the system property `inventory.link.seed` (default 755).
-- **Delay.** `SET|delay|<ms>` holds each new line for that time before the writer sends it. The
-  reader continues to read, so a delay does not decrease the throughput.
-- **Cut and restore.** `CUT` closes every open connection on both sides. Until `RESTORE`, the link
-  accepts each new store connection and closes it at once. Lines that are in a queue when a
-  connection closes are lost, as on a broken network link.
-- **Replies.** Each control command gets `OK`, or `ERR|reason` for a bad command or value.
-  `STATUS` reports the current settings. The link has no storage, so a restart sets all of them
-  to zero.
+**Retry policy** (`RetrySettings.DEFAULTS`, the same for both senders)
 
-### 4.3 Communications Front-End (owner: Kobe LaPrade)
+- At most 100 unacknowledged events in flight, in sequence order.
+- No progress within 500 ms, or a failed connection: reconnect after a backoff of 100 ms doubling
+  to 2 s, each wait lengthened by up to 20% jitter, and resend everything after the last
+  acknowledged position with the original event IDs.
+- After 10 consecutive failed attempts the sender marks the link `DOWN`, keeps every event and
+  keeps probing every 2 s; the first acknowledgement that moves the position marks it `UP`.
+- Each setting can be overridden with a system property such as
+  `-Dinventory.retry.ackTimeoutMs=50`; the end-to-end tests use a compressed copy.
 
-TODO(Kobe, #31): the acceptance rule and its transaction, re-acknowledging duplicates, refusing
-gaps, and the sender to the master.
+**Why not two-phase commit**
 
-### 4.4 Central Master Inventory (owner: Mike Andrews)
+- Two-phase commit across store, CFE and master would make every sale wait for the WAN and for
+  the DC to vote. During a link cut no sale could commit, which breaks AV-1 (the store keeps
+  selling with the WAN down). The outbox commits locally at once and moves the WAN out of the sale's
+  path; at-least-once resend plus idempotent apply gives the same end state as exactly-once.
+- A coordinator crash in two-phase commit can also leave participants blocked holding locks. Our
+  processes never wait on each other to commit.
 
-TODO(Mike, #32): the apply transaction (stock change, applied-event record, cursor), duplicate
-detection by event ID and by sequence, and seed-once initial stock.
+**How we check it**
 
-## 5. Sequence diagrams
+- The demo driver and the end-to-end tests compute the verdict only from durable STATUS keys,
+  after a drain gate (store `pending` 0, CFE `deliveredThrough` = `acceptedThrough`, master
+  `appliedThrough` = CFE `acceptedThrough`): lost = store `created` - master `applied`; applied
+  twice = master `appliedTwice`; stock match = store `stock.Pn` equals master `stock.store-1.Pn`
+  for every product, an additional cross-check.
 
-TODO(Godson, #34): the normal path and the outage-and-resend path (PlantUML).
+## Verdict from a real run
 
-## 6. Retry policy
+`scripts/demo.sh` on macOS, default two-minute profile: normal; drop 20% and duplicate 10%; link
+cut for 30 s while sales continue; store, CFE and master each killed with `kill -9` and
+restarted. The store's in-memory counters are printed right after the cut, because the store
+restart that follows sets them back to zero. The one sale without a reply was sent while the
+store was down; it was never recorded and is not retried, so it is not an event.
 
-TODO(Godson, #34): window 100; acknowledgement timeout 500 ms; backoff from 100 ms doubling to
-2 s with up to 20% jitter; link marked down after 10 consecutive failed attempts, every event
-kept, probing at 2 s.
+```
+driver stopped: 5103 sales sent, 5102 recorded, 1 without a reply (not retried)
+store after the cut: salesWhileDown=867 linkDownEpisodes=1 retriesSent=3007
 
-## 7. Why not two-phase commit
+VERDICT (durable STATUS keys only)
+  drain gate                         passed (store pending 0; CFE delivered = accepted = master applied)
+  events created at the store        5102
+  events applied at the master       5102
+  AV-2 response measure:
+    100% of store events reach the DC  100% (lost = created - applied = 0)
+    0 events lost                      0
+    0 events applied twice             0
+  additional cross-check:
+    store stock = master stock, P1-P5  yes
+      P1  store 997981  master 997981
+      P2  store 997880  master 997880
+      P3  store 998096  master 998096
+      P4  store 997975  master 997975
+      P5  store 997925  master 997925
+  informational (in memory, reset when a process restarts):
+    sales while the link was down      0
+    retries sent (store / CFE)         80 / 0
+    duplicates ignored (CFE / master)  0 / 0
+    link-down episodes                 0
 
-TODO(Godson, #34)
-
-## 8. Results from a real run
-
-TODO(Godson, #34): the verdict table printed by `scripts/demo.sh`.
+PASS  100% of store events reach the DC; 0 events lost; 0 events applied twice
+```
