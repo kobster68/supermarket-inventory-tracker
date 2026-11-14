@@ -1,6 +1,8 @@
 package edu.rit.swen755.inventory.master;
 
 import edu.rit.swen755.inventory.protocol.Product;
+import edu.rit.swen755.inventory.protocol.Publish;
+import edu.rit.swen755.inventory.protocol.Sources;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,9 +28,22 @@ final class MasterDatabase implements AutoCloseable {
     private static final int SCHEMA_VERSION = 1;
 
     private final Connection connection;
+    private final String source;
+    /** Test-only failure after changing stock, before recording the applied event. */
+    private final boolean failAfterStockUpdate;
 
-    private MasterDatabase(Connection connection) {
+    private MasterDatabase(Connection connection, String source, boolean failAfterStockUpdate) {
         this.connection = connection;
+        this.source = source;
+        this.failAfterStockUpdate = failAfterStockUpdate;
+    }
+
+    enum ApplyOutcome {
+        APPLIED, DUPLICATE, GAP
+    }
+
+    /** The event's outcome and the committed position the caller can acknowledge. */
+    record ApplyResult(ApplyOutcome outcome, long appliedThrough) {
     }
 
     /**
@@ -37,11 +52,18 @@ final class MasterDatabase implements AutoCloseable {
      * never re-seeded.
      */
     static MasterDatabase open(Path dataDir, String source) throws IOException, SQLException {
+        return open(dataDir, source, false);
+    }
+
+    /** Test entry point. A true flag fails every new apply after its stock update. */
+    static MasterDatabase open(Path dataDir, String source, boolean failAfterStockUpdate)
+            throws IOException, SQLException {
+        Sources.require(source);
         Files.createDirectories(dataDir);
         Connection c = DriverManager.getConnection("jdbc:sqlite:" + dataDir.resolve(FILE_NAME));
         try {
             createAndSeedOnce(c, source);
-            return new MasterDatabase(c);
+            return new MasterDatabase(c, source, failAfterStockUpdate);
         } catch (SQLException e) {
             c.close();
             throw e;
@@ -76,6 +98,15 @@ final class MasterDatabase implements AutoCloseable {
                 }
                 s.executeUpdate("PRAGMA user_version = " + SCHEMA_VERSION);
             }
+            try (PreparedStatement cursor = c.prepareStatement(
+                    "SELECT applied_through FROM cursor WHERE source = ?")) {
+                cursor.setString(1, source);
+                try (ResultSet rs = cursor.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new SQLException("database has no inventory for configured source " + source);
+                    }
+                }
+            }
             c.commit();
         } catch (SQLException e) {
             c.rollback();
@@ -92,20 +123,96 @@ final class MasterDatabase implements AutoCloseable {
         }
     }
 
+    /**
+     * Applies only the next event for the configured source. Stock, the applied-event record and
+     * cursor commit together. Duplicates and gaps return the current committed cursor without
+     * changing inventory. The result is returned only after the transaction commits.
+     */
+    synchronized ApplyResult apply(Publish event) throws SQLException {
+        if (!source.equals(event.source())) {
+            throw new IllegalArgumentException("unexpected source " + event.source()
+                    + ", expected " + source);
+        }
+        try {
+            long through = single("SELECT applied_through FROM cursor WHERE source = ?", source);
+            if (event.sequence() <= through || single(
+                    "SELECT COUNT(*) FROM applied_event WHERE event_id = ?", event.eventId().toString()) > 0) {
+                connection.commit();
+                return new ApplyResult(ApplyOutcome.DUPLICATE, through);
+            }
+            if (event.sequence() != through + 1) {
+                connection.commit();
+                return new ApplyResult(ApplyOutcome.GAP, through);
+            }
+
+            long quantity = single("SELECT quantity FROM stock WHERE source = ? AND product = ?",
+                    source, event.product().name());
+            long updatedQuantity = Math.addExact(quantity, event.delta());
+            try (PreparedStatement stock = connection.prepareStatement(
+                    "UPDATE stock SET quantity = ? WHERE source = ? AND product = ?")) {
+                stock.setLong(1, updatedQuantity);
+                stock.setString(2, source);
+                stock.setString(3, event.product().name());
+                if (stock.executeUpdate() != 1) {
+                    throw new SQLException("no stock row for " + source + "/" + event.product());
+                }
+            }
+            if (failAfterStockUpdate) {
+                throw new SQLException("test crash hook: failed after the stock update, before the applied record");
+            }
+            try (PreparedStatement applied = connection.prepareStatement(
+                    "INSERT INTO applied_event (event_id, source, sequence, apply_count) VALUES (?, ?, ?, 1)")) {
+                applied.setString(1, event.eventId().toString());
+                applied.setString(2, source);
+                applied.setLong(3, event.sequence());
+                applied.executeUpdate();
+            }
+            try (PreparedStatement cursor = connection.prepareStatement(
+                    "UPDATE cursor SET applied_through = ? WHERE source = ?")) {
+                cursor.setLong(1, event.sequence());
+                cursor.setString(2, source);
+                if (cursor.executeUpdate() != 1) {
+                    throw new SQLException("no cursor for " + source);
+                }
+            }
+            connection.commit();
+            return new ApplyResult(ApplyOutcome.APPLIED, event.sequence());
+        } catch (SQLException | RuntimeException e) {
+            rollbackAfter(e);
+            throw e;
+        }
+    }
+
+    private void rollbackAfter(Exception failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            failure.addSuppressed(rollbackFailure);
+        }
+    }
+
     /** Every durable master key for {@code source}, in {@link StatusKeys.Master#durable} order. */
     synchronized Map<String, String> durableStatus(String source) throws SQLException {
-        Map<String, String> values = new LinkedHashMap<>();
-        values.put(StatusKeys.Master.APPLIED, Long.toString(count("SELECT COUNT(*) FROM applied_event")));
-        values.put(StatusKeys.Master.APPLIED_TWICE,
-                Long.toString(count("SELECT COUNT(*) FROM applied_event WHERE apply_count > 1")));
-        values.put(StatusKeys.Master.appliedThrough(source), Long.toString(single(
-                "SELECT COALESCE(MAX(applied_through), 0) FROM cursor WHERE source = ?", source)));
-        for (Product p : Product.values()) {
-            values.put(StatusKeys.Master.stock(source, p), Long.toString(single(
-                    "SELECT quantity FROM stock WHERE source = ? AND product = ?", source, p.name())));
+        if (!this.source.equals(source)) {
+            throw new IllegalArgumentException("unexpected source " + source + ", expected " + this.source);
         }
-        connection.commit();
-        return values;
+        try {
+            Map<String, String> values = new LinkedHashMap<>();
+            values.put(StatusKeys.Master.APPLIED, Long.toString(count("SELECT COUNT(*) FROM applied_event")));
+            values.put(StatusKeys.Master.APPLIED_TWICE,
+                    Long.toString(count("SELECT COUNT(*) FROM applied_event WHERE apply_count > 1")));
+            values.put(StatusKeys.Master.appliedThrough(source), Long.toString(single(
+                    "SELECT applied_through FROM cursor WHERE source = ?", source)));
+            for (Product p : Product.values()) {
+                values.put(StatusKeys.Master.stock(source, p), Long.toString(single(
+                        "SELECT quantity FROM stock WHERE source = ? AND product = ?", source, p.name())));
+            }
+            connection.commit();
+            return values;
+        } catch (SQLException | RuntimeException e) {
+            rollbackAfter(e);
+            throw e;
+        }
     }
 
     private long count(String sql) throws SQLException {
@@ -131,9 +238,9 @@ final class MasterDatabase implements AutoCloseable {
         }
     }
 
-    /** Releases the file without committing: an open transaction rolls back. */
+    /** Waits for the current database operation, then releases the file. */
     @Override
-    public void close() {
+    public synchronized void close() {
         try {
             connection.close();
         } catch (SQLException e) {

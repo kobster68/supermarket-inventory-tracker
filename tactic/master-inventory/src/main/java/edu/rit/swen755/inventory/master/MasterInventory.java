@@ -1,7 +1,12 @@
 package edu.rit.swen755.inventory.master;
 
+import edu.rit.swen755.inventory.protocol.Ack;
+import edu.rit.swen755.inventory.protocol.AckKind;
 import edu.rit.swen755.inventory.protocol.ErrorReply;
+import edu.rit.swen755.inventory.protocol.LineCodec;
+import edu.rit.swen755.inventory.protocol.MalformedLineException;
 import edu.rit.swen755.inventory.protocol.Message;
+import edu.rit.swen755.inventory.protocol.Publish;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import edu.rit.swen755.inventory.protocol.StatusReply;
 import edu.rit.swen755.inventory.protocol.StatusRequest;
@@ -35,7 +40,14 @@ public final class MasterInventory implements RunningProcess {
 
     /** Opens (or creates and seeds) the database, then binds both ports. */
     public static MasterInventory start(MasterInventoryConfig config) throws IOException, SQLException {
-        MasterInventory master = new MasterInventory(config, MasterDatabase.open(config.dataDir(), config.source()));
+        return start(config, false);
+    }
+
+    /** Test entry point enabling a failure after the stock update and before the applied record. */
+    static MasterInventory start(MasterInventoryConfig config, boolean failAfterStockUpdate)
+            throws IOException, SQLException {
+        MasterInventory master = new MasterInventory(config,
+                MasterDatabase.open(config.dataDir(), config.source(), failAfterStockUpdate));
         try {
             master.listener = LineServer.start("master-listen", config.listenPort(), master::serveCfe);
             master.control = LineServer.control("master-control", config.controlPort(), master::answer);
@@ -47,13 +59,30 @@ public final class MasterInventory implements RunningProcess {
     }
 
     private void serveCfe(LineConnection cfe) throws IOException {
-        // TODO(Mike, #32): for each PUBLISH, apply it if it is the next contiguous sequence for its
-        // source (stock change, applied-event record and cursor in one transaction); treat an event
-        // already applied (by event ID, or by sequence at or below the cursor) as a no-op; refuse an
-        // event beyond a gap. After the commit, reply ACK|applied|source|appliedThrough in every
-        // case. Until then lines are read and discarded.
-        while (cfe.readLine() != null) {
-            // discarded
+        String line;
+        while ((line = cfe.readLine()) != null) {
+            cfe.send(apply(line));
+        }
+    }
+
+    private Message apply(String line) {
+        Message request;
+        try {
+            request = LineCodec.decode(line);
+        } catch (MalformedLineException e) {
+            return ErrorReply.of(e.getMessage());
+        }
+        if (!(request instanceof Publish event)) {
+            return ErrorReply.of("the master event port accepts only PUBLISH messages");
+        }
+        try {
+            MasterDatabase.ApplyResult result = database.apply(event);
+            if (result.outcome() == MasterDatabase.ApplyOutcome.DUPLICATE) {
+                duplicatesIgnored.incrementAndGet();
+            }
+            return new Ack(AckKind.APPLIED, event.source(), result.appliedThrough());
+        } catch (SQLException | IllegalArgumentException | ArithmeticException e) {
+            return ErrorReply.of("event processing failed: " + e.getMessage());
         }
     }
 
@@ -92,8 +121,7 @@ public final class MasterInventory implements RunningProcess {
 
     @Override
     public void close() {
-        // TODO(Mike, #32): stop accepting events and let an apply in progress commit before the
-        // database closes. Until then a clean stop is the same as a crash.
+        // The listeners stop new requests. Database close waits for an active apply to finish.
         crash();
     }
 }

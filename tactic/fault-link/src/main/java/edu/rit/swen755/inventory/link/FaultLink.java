@@ -2,6 +2,7 @@ package edu.rit.swen755.inventory.link;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -9,6 +10,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import edu.rit.swen755.inventory.protocol.Cut;
 import edu.rit.swen755.inventory.protocol.ErrorReply;
@@ -42,8 +44,14 @@ public final class FaultLink implements RunningProcess {
 
     private final FaultLinkConfig config;
     private final Random random = new Random(Long.getLong("inventory.link.seed", DEFAULT_SEED));
-    /** Every open connection, on both sides, so that CUT and crash can close them. */
-    private final Set<LineConnection> open = ConcurrentHashMap.newKeySet();
+    /** Name of every delayed-writer thread. */
+    static final String WRITER_THREAD_NAME = "fault-link-writer";
+
+    /** How long stopping a forwarding waits, in all, for its writers to leave. */
+    private static final long WRITER_STOP_WAIT_MILLIS = 1_000;
+
+    /** Every live forwarded connection, so that CUT and crash can stop them. */
+    private final Set<Forwarding> forwardings = ConcurrentHashMap.newKeySet();
     private LineServer listener;
     private LineServer control;
 
@@ -85,68 +93,141 @@ public final class FaultLink implements RunningProcess {
             return; // the CFE is down: the store's connection closes, and the store retries later
         }
 
-        open.add(store);
-        open.add(cfe);
+        Forwarding forwarding = new Forwarding(store, cfe);
+        forwardings.add(forwarding);
         
-        // Check after add(): a CUT either sees these connections in "open" or is seen here.
+        // Check after add(): a CUT either sees this forwarding or is seen here.
         if (cut) {
-            closeBoth(store, cfe);
+            forwarding.stop();
 
             return;
         }
 
-        Thread back = new Thread(() -> pipe(cfe, store), "fault-link-cfe-to-store");
-        back.setDaemon(true);
-        back.start();
-        pipe(store, cfe);
+        forwarding.start();
     }
 
-    /** Reads lines from {@code from}, applies the faults, and queues them for {@code to}. */
-    private void pipe(LineConnection from, LineConnection to) {
-        BlockingQueue<DelayedLine> queue = new LinkedBlockingQueue<>();
-        Thread writer = new Thread(() -> writeWhenDue(queue, to), "fault-link-writer");
-        writer.setDaemon(true);
-        writer.start();
+    /**
+     * One store connection and its CFE connection, with a writer thread for each direction. When
+     * either side ends, or on CUT or crash, {@link #stop()} closes both sockets and stops both
+     * writers: closing a socket does not wake a writer that sleeps out a delay.
+     */
+    private final class Forwarding {
 
-        try {
-            String line;
+        private final LineConnection store;
+        private final LineConnection cfe;
+        private final BlockingQueue<DelayedLine> toCfe = new LinkedBlockingQueue<>();
+        private final BlockingQueue<DelayedLine> toStore = new LinkedBlockingQueue<>();
+        private final List<Thread> writers;
+        private final AtomicBoolean stopped = new AtomicBoolean();
 
-            while ((line = from.readLine()) != null) {
-                if (chance(dropPercent)) {
+        Forwarding(LineConnection store, LineConnection cfe) {
+            this.store = store;
+            this.cfe = cfe;
+            this.writers = List.of(
+                    writer(toCfe, cfe),
+                    writer(toStore, store));
+        }
+
+        /** Starts the writers and the CFE-to-store reader, then reads store-to-CFE on this thread. */
+        void start() {
+            writers.forEach(Thread::start);
+            Thread back = new Thread(() -> pipe(cfe, toStore), "fault-link-cfe-to-store");
+            back.setDaemon(true);
+            back.start();
+            pipe(store, toCfe);
+        }
+
+        /** Reads lines from {@code from}, applies the faults, and queues them for the writer. */
+        private void pipe(LineConnection from, BlockingQueue<DelayedLine> queue) {
+            try {
+                String line;
+
+                while ((line = from.readLine()) != null) {
+                    if (chance(dropPercent)) {
+                        continue;
+                    }
+
+                    long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis);
+                    queue.add(new DelayedLine(line, due));
+
+                    if (chance(duplicatePercent)) {
+                        queue.add(new DelayedLine(line, due));
+                    }
+                }
+            } catch (IOException e) {
+                // The connection closed: the peer left, a CUT, or a crash.
+            } finally {
+                stop(); // the other direction then stops too
+            }
+        }
+
+        private Thread writer(BlockingQueue<DelayedLine> queue, LineConnection to) {
+            Thread t = new Thread(() -> writeWhenDue(queue, to), WRITER_THREAD_NAME);
+            t.setDaemon(true);
+
+            return t;
+        }
+
+        /** Writes each queued line when it is due, in queue order, until {@link #stop()}. */
+        private void writeWhenDue(BlockingQueue<DelayedLine> queue, LineConnection to) {
+            try {
+                while (!stopped.get()) {
+                    DelayedLine next = queue.take();
+                    long wait = next.due() - System.nanoTime();
+
+                    if (wait > 0) {
+                        TimeUnit.NANOSECONDS.sleep(wait);
+                    }
+
+                    if (stopped.get()) {
+                        return;
+                    }
+
+                    to.writeLine(next.line());
+                }
+            } catch (IOException | InterruptedException e) {
+                // The connection closed. Lines still in the queue are lost, as on a broken network.
+            }
+        }
+
+        /**
+         * Closes both sockets, drops the queued lines, and interrupts both writers, then waits up to
+         * {@link #WRITER_STOP_WAIT_MILLIS} for them to leave. Safe to call more than once.
+         */
+        void stop() {
+            if (!stopped.compareAndSet(false, true)) {
+                return;
+            }
+
+            forwardings.remove(this);
+            writers.forEach(Thread::interrupt);
+            closeQuietly(store);
+            closeQuietly(cfe);
+            toCfe.clear();
+            toStore.clear();
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WRITER_STOP_WAIT_MILLIS);
+
+            for (Thread writer : writers) {
+                long remaining = deadline - System.nanoTime();
+
+                if (writer == Thread.currentThread() || remaining <= 0) {
                     continue;
                 }
 
-                long due = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis);
-                queue.add(new DelayedLine(line, due));
+                try {
+                    TimeUnit.NANOSECONDS.timedJoin(writer, remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
 
-                if (chance(duplicatePercent)) {
-                    queue.add(new DelayedLine(line, due));
+                    return;
                 }
             }
-        } catch (IOException e) {
-            // The connection closed: the peer left, a CUT, or a crash.
-        } finally {
-            closeBoth(from, to); // the other direction then stops too
-            writer.interrupt(); // a closed socket does not wake a writer that waits for a delay
         }
     }
 
-    /** Writes each queued line when it is due, in queue order, until the pipe interrupts it. */
-    private static void writeWhenDue(BlockingQueue<DelayedLine> queue, LineConnection to) {
-        try {
-            while (true) {
-                DelayedLine next = queue.take();
-                long wait = next.due() - System.nanoTime();
-
-                if (wait > 0) {
-                    TimeUnit.NANOSECONDS.sleep(wait);
-                }
-
-                to.writeLine(next.line());
-            }
-        } catch (IOException | InterruptedException e) {
-            // The connection closed. Lines still in the queue are lost, as on a broken network.
-        }
+    /** Live writer threads of this link, for tests. */
+    long liveWriterCount() {
+        return forwardings.stream().flatMap(f -> f.writers.stream()).filter(Thread::isAlive).count();
     }
 
     /** A line and the {@link System#nanoTime()} at which it may be written. */
@@ -158,19 +239,16 @@ public final class FaultLink implements RunningProcess {
         return percent > 0 && random.nextInt(100) < percent;
     }
 
-    private void closeBoth(LineConnection a, LineConnection b) {
-        close(a);
-        close(b);
-    }
-
-    private void close(LineConnection connection) {
-        open.remove(connection);
-       
+    private static void closeQuietly(LineConnection connection) {
         try {
             connection.close();
         } catch (IOException ignored) {
             // Already closed.
         }
+    }
+
+    private void stopAll() {
+        forwardings.forEach(Forwarding::stop);
     }
 
     private Message answer(Message request) {
@@ -189,7 +267,7 @@ public final class FaultLink implements RunningProcess {
 
             case Cut c -> {
                 cut = true;
-                open.forEach(this::close);
+                stopAll();
                 yield new Ok();
             }
 
@@ -228,7 +306,7 @@ public final class FaultLink implements RunningProcess {
 
     @Override
     public void crash() {
-        open.forEach(this::close);
+        stopAll();
 
         if (listener != null) {
             listener.close();
