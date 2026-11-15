@@ -240,10 +240,9 @@ local transaction, leaving inventory and its outgoing event unchanged. Central a
 returns \texttt{BUSY} before accepting excess work (Section~\ref{sec:iep}). Snapshot
 recovery after reconnection does not keep writes available while the buffer is full,
 so a WAN outage that outlasts the store's buffer is a risk to \scnref{AV-1}'s availability.
-Measure \scnref{AV-3} from process failure to successful queries
-through the standby, including detection, lease expiry and client switching.
-\scnref{AV-3} does not yet state a numeric failover bound; this is an open risk for
-the evaluation. Validate standby lag, exclusive query
+Measure \scnref{AV-3}'s 30-second bound from process failure to successful queries
+through the standby, including detection, lease expiry and client switching; the
+heartbeat interval and lease length must fit inside it. Validate standby lag, exclusive query
 ownership during a partition, and consistent state transfer while new events arrive.
 Credential/scope administration, backup restoration and the physical dispatch handoff
 require validation. For \scnref{TEST-2}, measure failure detection through restored local

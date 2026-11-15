@@ -15,7 +15,8 @@ The system has four goals:
 
 Figure~\ref{fig:context} shows the system boundary. Inside it are the stores, the \DC and
 the WAN link between them. Outside it are the store and \DC managers and the two external
-systems: the POS system in each store and the \AnalyticsClient, a future subscriber.
+systems: the POS system in each store and the \AnalyticsClient, a future client that
+queries the inventory and does not change it.
 Table~\ref{tab:external-exchange} lists the information that we exchange with each
 external system.
 
@@ -33,7 +34,7 @@ external system.
 \hline
 \textbf{External system} & \textbf{Comes in} & \textbf{Goes out} & \textbf{How often}\\\hline
 POS system (one per store) & A one-way stream of sales events, one for each product scan. & Nothing. & Each scan; up to 100 events per second per store.\\\hline
-\AnalyticsClient (future) & Acknowledgements confirming durable event-processing progress. & Inventory events, over the exchange protocol. & Each event, after the client connects.\\\hline
+\AnalyticsClient (future) & Read-only queries about stock levels, product families and store totals. & Query results from the master record. & On demand, when the client asks.\\\hline
 \end{tabularx}
 \caption{Information exchanged with each external system.}
 \label{tab:external-exchange}
