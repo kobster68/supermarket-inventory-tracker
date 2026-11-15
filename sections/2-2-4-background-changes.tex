@@ -10,3 +10,13 @@ Source streams and local filtering replace family topics; cumulative subscriber
 acknowledgements govern replay retention. This draft also addresses the (H,M)
 scenarios and adds the \scnref{PERF-4} catch-up analysis.
 Section~\ref{sec:doc-control} records integrated draft milestones.
+
+For the ATAM review draft, the \AnalyticsClient now uses the read-only \InventoryQuery.
+The \StandbyMaster adds a second \DC host and subscription for master query failover,
+with state transfer and replay to restore the failed copy.
+We removed the extra post-acknowledgement retention window, size store buffering in
+days, and use \StoreSnapshot recovery when required history is missing. Composite
+now covers the family hierarchy, with separate many-to-many product membership and
+distinct-product counting. Store growth explicitly requires configuration and identity
+provisioning. Section~\ref{sec:approaches} records the remaining capacity and failover
+validation questions.

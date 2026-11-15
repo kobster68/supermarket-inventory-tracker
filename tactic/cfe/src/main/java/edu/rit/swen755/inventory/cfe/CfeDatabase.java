@@ -1,5 +1,7 @@
 package edu.rit.swen755.inventory.cfe;
 
+import edu.rit.swen755.inventory.protocol.Product;
+import edu.rit.swen755.inventory.protocol.Publish;
 import edu.rit.swen755.inventory.protocol.StatusKeys;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,8 +12,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * The CFE's SQLite file: the event log (unique on event ID and on source and sequence) and, per
@@ -71,6 +77,125 @@ final class CfeDatabase implements AutoCloseable {
         }
     }
 
+    record Acceptance(long through, boolean duplicate) { }
+    record Position(long accepted, long delivered) { }
+
+    /** The event and its contiguous cursor commit together, before any accepted ACK is sent. */
+    synchronized Acceptance accept(Publish event) throws SQLException {
+        try {
+            long through = position(event.source()).accepted();
+            boolean duplicate = event.sequence() <= through;
+            try (PreparedStatement q = connection.prepareStatement(
+                    "SELECT source, sequence FROM event_log WHERE event_id = ?")) {
+                q.setString(1, event.eventId().toString());
+                try (ResultSet rs = q.executeQuery()) {
+                    if (rs.next()) {
+                        if (!event.source().equals(rs.getString(1)) || event.sequence() != rs.getLong(2)) {
+                            throw new SQLException("event ID already belongs to source " + rs.getString(1)
+                                    + " at sequence " + rs.getLong(2));
+                        }
+                        duplicate = true;
+                    }
+                }
+            }
+            if (!duplicate && event.sequence() == through + 1) {
+                try (PreparedStatement insert = connection.prepareStatement(
+                        "INSERT INTO event_log VALUES (?, ?, ?, ?, ?, ?)")) {
+                    insert.setString(1, event.eventId().toString());
+                    insert.setString(2, event.source());
+                    insert.setLong(3, event.sequence());
+                    insert.setString(4, event.product().name());
+                    insert.setLong(5, event.delta());
+                    insert.setString(6, event.timestamp().toString());
+                    insert.executeUpdate();
+                }
+                through = event.sequence();
+                try (PreparedStatement update = connection.prepareStatement(
+                        "INSERT INTO position VALUES (?, ?, 0) ON CONFLICT(source)"
+                                + " DO UPDATE SET accepted_through = excluded.accepted_through")) {
+                    update.setString(1, event.source());
+                    update.setLong(2, through);
+                    update.executeUpdate();
+                }
+            }
+            connection.commit();
+            return new Acceptance(through, duplicate);
+        } catch (SQLException | RuntimeException e) {
+            rollbackAfter(e);
+            throw e;
+        }
+    }
+
+    private Position position(String source) throws SQLException {
+        try (PreparedStatement q = connection.prepareStatement(
+                "SELECT accepted_through, delivered_through FROM position WHERE source = ?")) {
+            q.setString(1, source);
+            try (ResultSet rs = q.executeQuery()) {
+                return rs.next() ? new Position(rs.getLong(1), rs.getLong(2)) : new Position(0, 0);
+            }
+        }
+    }
+
+    synchronized Map<String, Position> positions() throws SQLException {
+        Map<String, Position> positions = new LinkedHashMap<>();
+        try (Statement s = connection.createStatement();
+                ResultSet rs = s.executeQuery("SELECT source, accepted_through, delivered_through FROM position ORDER BY source")) {
+            while (rs.next()) {
+                positions.put(rs.getString(1), new Position(rs.getLong(2), rs.getLong(3)));
+            }
+        } finally {
+            connection.commit();
+        }
+        return positions;
+    }
+
+    synchronized List<Publish> eventsAfter(String source, long through, int limit) throws SQLException {
+        List<Publish> events = new ArrayList<>();
+        try (PreparedStatement q = connection.prepareStatement(
+                "SELECT event_id, sequence, product, delta, timestamp FROM event_log"
+                        + " WHERE source = ? AND sequence > ? ORDER BY sequence LIMIT ?")) {
+            q.setString(1, source);
+            q.setLong(2, through);
+            q.setInt(3, limit);
+            try (ResultSet rs = q.executeQuery()) {
+                while (rs.next()) {
+                    events.add(new Publish(UUID.fromString(rs.getString(1)), source, rs.getLong(2),
+                            Product.valueOf(rs.getString(3)), rs.getLong(4), Instant.parse(rs.getString(5))));
+                }
+            }
+        } finally {
+            connection.commit();
+        }
+        return events;
+    }
+
+    /** Only the sender calls this, after validating an applied ACK against its sent position. */
+    synchronized long markDelivered(String source, long through) throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE position SET delivered_through = ? WHERE source = ?"
+                        + " AND delivered_through < ? AND accepted_through >= ?")) {
+            update.setLong(1, through);
+            update.setString(2, source);
+            update.setLong(3, through);
+            update.setLong(4, through);
+            update.executeUpdate();
+            long delivered = position(source).delivered();
+            connection.commit();
+            return delivered;
+        } catch (SQLException | RuntimeException e) {
+            rollbackAfter(e);
+            throw e;
+        }
+    }
+
+    private void rollbackAfter(Exception failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException e) {
+            failure.addSuppressed(e);
+        }
+    }
+
     /** Every durable CFE key for {@code source}, in {@link StatusKeys.Cfe#durable} order. */
     synchronized Map<String, String> durableStatus(String source) throws SQLException {
         Map<String, String> values = new LinkedHashMap<>();
@@ -79,16 +204,20 @@ final class CfeDatabase implements AutoCloseable {
             requireRow(rs);
             values.put(StatusKeys.Cfe.STORED, Long.toString(rs.getLong(1)));
         }
+        Map<String, Position> positions = new LinkedHashMap<>();
+        positions.put(source, new Position(0, 0));
         try (PreparedStatement s = connection.prepareStatement(
-                "SELECT COALESCE(MAX(accepted_through), 0), COALESCE(MAX(delivered_through), 0)"
-                        + " FROM position WHERE source = ?")) {
-            s.setString(1, source);
+                "SELECT source, accepted_through, delivered_through FROM position ORDER BY source")) {
             try (ResultSet rs = s.executeQuery()) {
-                requireRow(rs);
-                values.put(StatusKeys.Cfe.acceptedThrough(source), Long.toString(rs.getLong(1)));
-                values.put(StatusKeys.Cfe.deliveredThrough(source), Long.toString(rs.getLong(2)));
+                while (rs.next()) {
+                    positions.put(rs.getString(1), new Position(rs.getLong(2), rs.getLong(3)));
+                }
             }
         }
+        positions.forEach((id, p) -> {
+            values.put(StatusKeys.Cfe.acceptedThrough(id), Long.toString(p.accepted()));
+            values.put(StatusKeys.Cfe.deliveredThrough(id), Long.toString(p.delivered()));
+        });
         connection.commit();
         return values;
     }
@@ -101,7 +230,7 @@ final class CfeDatabase implements AutoCloseable {
 
     /** Releases the file without committing: an open transaction rolls back. */
     @Override
-    public void close() {
+    public synchronized void close() {
         try {
             connection.close();
         } catch (SQLException e) {

@@ -143,17 +143,17 @@ public final class SystemHarness implements AutoCloseable {
      * @return {@code false} if {@code timeout} passed first
      */
     public boolean awaitDrained(Duration timeout) {
-        // TODO(Godson, #34): poll STATUS on store, CFE and master until the three conditions hold
-        // or the timeout passes.
-        throw new UnsupportedOperationException("TODO(Godson, #34): drain gate");
+        return Verdict.awaitDrained(timeout, () -> Verdict.isDrained(
+                status(Role.STORE), status(Role.CFE), status(Role.MASTER), Defaults.SOURCE));
     }
 
     /** The verdict computed from durable STATUS keys only. Call after {@link #awaitDrained}. */
     public Verdict verdict() {
-        // TODO(Godson, #34): read store and master STATUS and build the verdict: lost = store created
-        // minus master applied; applied twice = master appliedTwice; stock matches when store
-        // stock.Pn equals master stock.<source>.Pn for every product.
-        throw new UnsupportedOperationException("TODO(Godson, #34): verdict");
+        try {
+            return Verdict.from(status(Role.STORE), status(Role.MASTER), Defaults.SOURCE);
+        } catch (IOException | MalformedLineException e) {
+            throw new IllegalStateException("could not read STATUS for the verdict", e);
+        }
     }
 
     private void launch(Role role, int listenPort, int controlPort) throws Exception {

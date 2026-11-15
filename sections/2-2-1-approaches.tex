@@ -3,8 +3,8 @@
 \subsubsection{Architectural Approaches}
 \label{sec:approaches}
 
-The \POSAdapter translates sales for the \StoreAgent, whose local transaction commits
-inventory, source sequence and \Outbox event together: Transactions (Bass, Clements,
+The \POSAdapter translates sales for the \StoreAgent, which commits inventory,
+source sequence and \Outbox event together in one local transaction: Transactions (Bass, Clements,
 and Kazman 61). The \Outbox retries committed events with unchanged IDs until
 acknowledged: Retry (60). Escalation retains undelivered records.
 
@@ -26,17 +26,25 @@ The publisher saves
 \texttt{appliedThrough} only after its effects, duplicate records and cursor commit
 together; irrelevant messages still advance its durable processing position.
 
+The future \AnalyticsClient uses the active master's \InventoryQuery through the
+Client-Server pattern (Bass, Clements, and Kazman 126--127). Authorize actors (174)
+restricts each client's data scope, while Limit access (174) restricts analytics
+access to the read-only query interface. Request-rate limits control query load.
+Analytics queries compete with reports and event processing, so capacity tests must
+include them.
+
 \paragraph{Routing and retention.}
 Subscriptions select authorized source streams; consumers filter locally. Dropping
 family topics avoids maintaining routing when product-family membership changes,
 but increases fan-out, network traffic and client filtering. Consumers acknowledge
 their progress even through messages they ignore.
-The \CFE prunes a message only after every relevant active subscription acknowledges
-through its sequence, then a further 60 minutes from the last required acknowledgement
-(Section~\ref{sec:iep}). With no relevant subscription, the window starts at acceptance.
-Disconnected subscriptions pin unread history. Slow consumers therefore increase
-storage and can delay publishers through backpressure; the timer cannot expire events
-still owed to them.
+The \CFE may prune a message once every relevant active subscription acknowledges
+through its sequence (Section~\ref{sec:iep}). This is safe because acknowledgements
+follow durable subscriber commits, a failed master rebuilds from the \StandbyMaster,
+and missing store history uses a \StoreSnapshot. With no relevant subscription, a
+message is eligible for pruning upon durable acceptance. Disconnected subscriptions
+still pin unread history, and slow consumers increase storage and can delay publishers
+through backpressure.
 
 \paragraph{Alternatives and trade-offs.}
 Synchronous \DC confirmation would make local updates depend on the WAN.
@@ -49,8 +57,32 @@ The C\&C and Allocation views (Sections~\ref{sec:cc-view} and~\ref{sec:allocatio
 select supervised \StoreAgent restart and rebuild from its local log/snapshot,
 preserved separately from pruned \Outbox transmissions. Failure detection through
 restored access must meet the 30-minute local-outage limit.
-\CentralMasterInventory restarts from its committed cursor and retained CFE history.
-The single \DC host needs replacement/backup recovery for host or storage failure.
+
+For \scnref{AV-1}, replay remains the normal recovery path after any WAN outage length
+while the required history survives. If history is missing, State resynchronization
+(60) uses a consistent \StoreSnapshot: stock, confirmed orders not yet acknowledged
+by the \DC, and the source sequence position. Both masters replace only that store's
+stock and position atomically, then process later events without reapplying covered
+deltas. \ShippingOrderFulfillment receives the open orders with unchanged IDs for
+duplicate detection (Section~\ref{sec:iep}). This restores current state, not the
+missing event history. Snapshot transfer and reconciliation add recovery work.
+
+For \scnref{AV-3}, Active redundancy (hot spare, 66--67) realises the Redundant spare
+tactic (59). The \StandbyMaster runs on a second \DC host with its own database and
+\CFE subscription. Both masters process the same events and commit inventory,
+duplicate records and applied positions together. Heartbeats (57) detect failure.
+Only the master holding the lease serves \InventoryQuery requests: it stops serving
+if renewal fails, and the standby takes over only after lease expiry.
+The \CFE continues accepting events during a master process failure.
+The failed copy restores consistent state and per-source positions from the surviving
+master, replays later events and rejoins as standby. This state resynchronization (60)
+restores redundancy while the surviving master serves queries.
+
+Costs include a second host/database, another event delivery and processing path,
+failure detection, lease coordination and state transfer. The standby protects the
+master only. Failure of the primary \DC host also stops its \CFE and client services,
+so new central updates wait for their recovery. Host or storage recovery requires
+surviving durable state.
 \opResync compares durable positions before replay: expired identities require
 reconciliation; missing history requires a consistent snapshot/backup.
 Recovery never resets stock or reuses source sequences.
@@ -70,12 +102,18 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
 \begin{tabularx}{\linewidth}{|>{\raggedright\arraybackslash}p{0.28\linewidth}|>{\raggedright\arraybackslash}p{0.23\linewidth}|>{\raggedright\arraybackslash}X|}
 \hline
 \textbf{Scenarios} & \textbf{Pattern and source} & \textbf{Supporting tactic / realisation}\\\hline
-\scnref{AV-2}, \scnref{PERF-2}, \scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-1}, \scnref{INT-2}
+\scnref{AV-2}, \scnref{PERF-2}, \scnref{SCAL-2}, \scnref{MOD-1}, \scnref{INT-2}
 & Publish-Subscribe (Bass et al. 129--130)
-& Use an intermediary: the \CFE event bus separates publishers and consumers (Section~\ref{sec:cc-view}); fan-out adds central work and dependency.\\\hline
+& Use an intermediary: the \CFE event bus separates publishers and subscribers, including subscribing clients in \scnref{MOD-1} (Section~\ref{sec:cc-view}). Fan-out adds central work and dependency.\\\hline
+\scnref{INT-1}, \scnref{MOD-1}
+& Client-Server (Bass et al. 126--127)
+& Encapsulate: \InventoryQuery separates query clients from master-inventory implementation. Authorized, rate-limited queries add server work (Section~\ref{sec:cc-view}).\\\hline
+\scnref{AV-3}
+& Active redundancy (hot spare, Bass et al. 66--67)
+& Redundant spare: the \StandbyMaster on a second \DC host processes the same events through its own subscription. Lease-controlled query failover adds a second database and coordination work (Section~\ref{sec:cc-view}).\\\hline
 \scnref{MOD-2}, \scnref{PERF-3}
 & Composite (Gamma et al. 163)
-& Encapsulate: Common's \texttt{CatalogItem}, \texttt{ProductFamily} and \texttt{Product} support recursive value queries (Figure~\ref{fig:domain-model}); traversal must guard cycles and repeated products.\\\hline
+& Encapsulate: Composite covers Common's family hierarchy only. Separate many-to-many membership lets products join several families. \texttt{ProductFamily.totalValue()} counts each product once per family (Figure~\ref{fig:domain-model}).\\\hline
 \end{tabularx}
 
 \par\medskip\noindent
@@ -83,17 +121,17 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
 \hline
 \textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{AV-1}}
-  {Graceful degradation (60); Escalating restart (60--61)}
-  {Local inventory and \Outbox buffering; supervised \StoreAgent rebuild from its local log (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
-  {Central state lags; storage capacity limits disconnected operation.}
+  {Graceful degradation; State resynchronization (60); Escalating restart (60--61)}
+  {Local inventory and \Outbox buffering; replay after reconnect, or \StoreSnapshot if required history is missing. Supervised local rebuild handles store failure (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Central state lags; finite storage limits disconnected updates. Snapshot transfer and reconciliation add recovery work.}
 \tacticrow{\scnref{AV-2}}
   {Transactions (61); Retry (60)}
   {Same-ID retries; atomic state/progress; publisher \texttt{accepted} and subscriber cumulative \texttt{applied} acks (Section~\ref{sec:iep}).}
-  {Persistence and duplicate tracking; \CFE history waits for all required acks plus 60 minutes.}
+  {Persistence and duplicate tracking. Slow or disconnected subscriptions retain unread history.}
 \tacticrow{\scnref{AV-3}}
-  {Transactions (61)}
-  {\CentralMasterInventory commits state/cursor together; restart and \opReplay use history held until all required cumulative acks plus 60 minutes (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
-  {Replay delay; disconnected consumers pin history and can trigger backpressure.}
+  {Redundant spare (59); Heartbeat (57); Transactions (61)}
+  {Hot spare on a second \DC host with its own subscription and atomic state/cursors. Lease-controlled failover serves queries while the failed copy restores state and replays (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Second host/database and processing path, detection and lease coordination. State transfer adds load; a lagging subscription pins history.}
 \end{tabularx}\par\medskip
 
 \noindent
@@ -101,21 +139,21 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
 \hline
 \textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{PERF-1}}
-  {Introduce concurrency (141)}
-  {Local transactions overlap ordered \Outbox transmission (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
-  {Coordination and resource overhead; validate 100 events per second.}
+  {Introduce concurrency (141); Bound queue sizes (142)}
+  {One local transaction commits each update and outgoing event while ordered transmission overlaps. Admission limits protect capacity. \scnref{PERF-4} covers the post-outage surge (Sections~\ref{sec:cc-view}, \ref{sec:iep}).}
+  {Coordination and storage overhead; validate 100 events per second and one-second local updates at peak load. Measure replay's effect on live work.}
 \tacticrow{\scnref{PERF-2}}
   {Introduce concurrency (141); Bound queue sizes (142)}
   {Independent consumer delivery; bounded admission returns \texttt{BUSY} while publishers retain pending events (Section~\ref{sec:iep}).}
   {Contention and backpressure; recovery needs spare capacity.}
 \tacticrow{\scnref{PERF-3}}
   {Increase efficiency of resource usage (141)}
-  {Proposed indexed inventory queries; Common's recursive Composite traversal (Figure~\ref{fig:domain-model}).}
-  {Index maintenance, storage and correct shared-product counting.}
+  {Proposed indexes support inventory queries. \texttt{ProductFamily.totalValue()} walks sub-families and counts each product once per family (Figure~\ref{fig:domain-model}).}
+  {Index maintenance and storage, plus distinct-product tracking during traversal.}
 \tacticrow{\scnref{PERF-4}}
   {Introduce concurrency; Increase resources (141)}
-  {\Outbox: 180{,}000-event WAN buffer; catch-up capacity 2{,}000 events per second while live sales continue (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
-  {Local storage and added WAN/\DC headroom; replay competes with live work.}
+  {Size \Outbox buffering in days; 180{,}000 events is the 30-minute test backlog. Selected capacity is 2{,}000 combined live/replay events per second per recovering store (Section~\ref{sec:analysis-results}).}
+  {Storage and WAN/\DC headroom; replay competes with live work. Longer outages increase catch-up time.}
 \end{tabularx}\par\medskip
 
 \noindent
@@ -135,8 +173,8 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
   {Proposed operation and inventory-scope checks in \StoreAgent and \CentralMasterInventory access paths.}
   {Accurate scope assignments and consistent enforcement.}
 \tacticrow{\scnref{SCAL-1}}
-  {Defer binding (configuration time, 124)}
-  {One configured \StoreAgent, registered source identity and certificates per new store (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
+  {Defer binding (configuration time, 124--125)}
+  {One configuration entry and one provisioned store identity per new store, with its \StoreAgent instance and certificates (Sections~\ref{sec:cc-view}, \ref{sec:allocation-view}).}
   {Provisioning work; central throughput needs separate validation.}
 \tacticrow{\scnref{SCAL-2}}
   {Use an intermediary (107)}
@@ -163,17 +201,17 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
 \hline
 \textbf{ID} & \textbf{Tactic (4e, page)} & \textbf{Mechanism / view} & \textbf{Cost}\\\hline
 \tacticrow{\scnref{MOD-1}}
-  {Use an intermediary (107; 123)}
-  {New client uses \IEP without changing existing publishers.}
-  {Shared-contract compatibility and extra subscriber load.}
+  {Use an intermediary (107; 123); Encapsulate (106; 123)}
+  {New subscribers use \IEP. Query clients use \InventoryQuery. Both use existing interfaces without code changes to existing components.}
+  {Contract compatibility, identity provisioning and added delivery or query load.}
 \tacticrow{\scnref{MOD-2}}
   {Encapsulate (106; 123)}
-  {Common's Composite exposes \texttt{CatalogItem.totalValue()} for leaves and families (Figure~\ref{fig:domain-model}).}
-  {Traversal, cycle checks and shared-product counting.}
+  {Common's family Composite uses \texttt{ProductFamily.totalValue()} to traverse sub-families and count each product once per family (Figure~\ref{fig:domain-model}).}
+  {Hierarchy validation, cycle checks and distinct-product tracking.}
 \tacticrow{\scnref{INT-1}}
-  {Use an intermediary; Adhere to standards (107)}
-  {The future \AnalyticsClient receives authorized events over the shared \IEP.}
-  {Contract compatibility, client provisioning and additional fan-out work.}
+  {Encapsulate (106; 123); Authorize actors; Limit access (174)}
+  {The future \AnalyticsClient sends authorized, rate-limited read-only requests through \InventoryQuery to the active master (Section~\ref{sec:cc-view}).}
+  {Client identities, data scopes and rate limits need configuration. Queries compete with reports and event processing.}
 \tacticrow{\scnref{INT-2}}
   {Use an intermediary (107)}
   {\CFE subscription interface serves a variable number of conforming clients.}
@@ -197,8 +235,16 @@ marked \emph{proposed} or \emph{options} identify remaining refinements.
 
 \paragraph{Validation and remaining risks.}
 The selected recovery, buffering, mutual TLS and store-provisioning mechanisms
-still need timed recovery and load tests. Full \Outbox admission rejects an update
-atomically; central admission returns \texttt{BUSY} before accepting excess work
-(Section~\ref{sec:iep}). Credential/scope administration, backup restoration and the
-physical dispatch handoff require validation. The \scnref{TEST-2} wording must describe
-the restart/recovery mechanism supplied by the deployment.
+still need timed recovery and load tests. Full \Outbox admission rejects the whole
+local transaction, leaving inventory and its outgoing event unchanged. Central admission
+returns \texttt{BUSY} before accepting excess work (Section~\ref{sec:iep}). Snapshot
+recovery after reconnection does not keep writes available while the buffer is full,
+so a WAN outage that outlasts the store's buffer is a risk to \scnref{AV-1}'s availability.
+Measure \scnref{AV-3} from process failure to successful queries
+through the standby, including detection, lease expiry and client switching.
+\scnref{AV-3} does not yet state a numeric failover bound; this is an open risk for
+the evaluation. Validate standby lag, exclusive query
+ownership during a partition, and consistent state transfer while new events arrive.
+Credential/scope administration, backup restoration and the physical dispatch handoff
+require validation. For \scnref{TEST-2}, measure failure detection through restored local
+inventory access under the deployment's supervised restart and rebuild.
