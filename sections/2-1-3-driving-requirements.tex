@@ -41,9 +41,9 @@ names the parts of our solution.
   {A fault in the WAN link between a store and the \DC, which is part of the system's own deployment (Section~\ref{sec:allocation-view}).}
   {An omission fault: the store loses its WAN link to the \DC.}
   {The store-to-\DC link and the store system.}
-  {Normal operation; the store-to-\DC link is down for an outage of any length.}
-  {The store system keeps serving reads and updates against the store inventory, logs the fault, and keeps each outbound event for delivery when the link returns. When the link returns, the store system replays every buffered event. If its history is incomplete, because the buffer is full or the local history is lost, it sends a snapshot of its stock instead, and the central system replaces the figures for that store.}
-  {The store's inventory stays readable and updatable throughout. On the replay path, no outgoing event is lost and every buffered event reaches the central system. After a snapshot resync, the store and central figures for that store match. The separate limit on a local-inventory service outage, no single outage over 30 minutes, is unchanged.}
+  {Normal operation; the store-to-\DC link is down for any length of time.}
+  {The store system keeps serving reads and updates against the store inventory, logs the fault, and keeps each outbound event for delivery when the link returns. Its buffer is sized for days of outage; if the buffer fills, the store system refuses each further update whole, so no recorded update loses its outbound event, and reads continue. When the link returns, the store system replays every buffered event. If the history needed for replay is missing, for example because the store's local history was lost, it sends a snapshot of its stock instead, and the central system replaces the figures for that store.}
+  {The store's inventory stays readable throughout and updatable while its buffer has room. No recorded update loses its outgoing event; on the replay path every buffered event reaches the central system. After a snapshot resync, the store and central figures for that store match. The separate limit on a local-inventory service outage, no single outage over 30 minutes, is unchanged.}
 
 \scenario{AV-2}
   {The store-to-\DC link or the central system (transient fault).}
@@ -59,7 +59,7 @@ names the parts of our solution.
   {The master record and its database.}
   {Normal operation; stores keep sending events.}
   {The central system keeps accepting and storing events. A standby copy of the master record, which is already current, takes over. The failed copy is rebuilt afterwards.}
-  {Query service resumes within seconds; 0 events lost; store operation stops for 0 seconds.}
+  {Inventory queries succeed through the standby within 30 seconds of the master process failing, a time that includes failure detection and lease expiry; 0 events lost; store operation stops for 0 seconds.}
 
 \scenario{PERF-1}
   {The POS system of one store.}
@@ -74,7 +74,7 @@ names the parts of our solution.
   {All stores send events at full rate: 1{,}000 events per second at the \DC.}
   {The central system and its consumers.}
   {Maximum scale: ten stores and one \DC.}
-  {The central system durably stores each event, confirms acceptance to the store, and delivers it to every consumer; each consumer confirms its processing progress. The confirmation says that the consumer has durably applied the event. Thus the central system can release the event safely, a consumer resumes from the correct place after a crash, and a slow consumer is visible.}
+  {The central system durably stores each event, confirms acceptance to the store, and delivers it to every consumer; each consumer confirms its processing progress. The confirmation says that the consumer has durably processed the event, either applying it or ignoring it as irrelevant. Thus the central system can release the event safely, a consumer resumes from the correct place after a crash, and a slow consumer is visible.}
   {1{,}000 events per second sustained. Measured from the moment a store first transmits an event: durable central acceptance is confirmed to the store within 1 second at the 95th percentile, and every required consumer has processed and acknowledged the event within 5 seconds at the 95th percentile, including central queueing and delivery time. No queue at the central system grows without bound.}
 
 \scenario{PERF-3}

@@ -71,7 +71,7 @@ replacement and durable-state recovery are required; supervision alone does not
 repair hardware.
 
 A \CentralMasterInventory process failure leaves the \CFE accepting messages.
-Query clients fail over within seconds to the \StandbyMaster (\scnref{AV-3}). Only
+Query clients fail over within 30 seconds to the \StandbyMaster (\scnref{AV-3}). Only
 the master holding the lease serves queries: it stops if renewal fails, and the
 standby takes over only after lease expiry. Lease coordination must preserve that
 exclusivity during a partition. The failed copy restores a consistent copy of the

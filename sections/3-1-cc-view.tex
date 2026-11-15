@@ -132,7 +132,7 @@ rows, so every box in the figure has a row and every row is a box.
 \CFE & The pub-sub event bus: persists each event, acknowledges it to the publishing \Outbox, delivers every event to every subscriber, and keeps a per-subscription delivered position. & \DC & Yes (event store) & 100\% delivery (\scnref{AV-2}); \mbox{1{,}000} events/s (\scnref{PERF-2})\\\hline
 \DCAgent & Publishes the \DC's own stock events (goods receipts and dispatches when goods ship) through the \CFE. & \DC & None & Master covers \DC stock\\\hline
 \CentralMasterInventory & Authoritative record of all store and \DC stock; a projection of the per-source event log; provides the \InventoryQuery. After a failure it copies the \StandbyMaster's state and its per-source applied positions, then runs \opReplay from those copied positions. & \DC & Yes (database) & Recovery (\scnref{AV-3}); access (\scnref{SEC-1})\\\hline
-\StandbyMaster & Hot spare: a second subscription that applies every event idempotently; takes over the \InventoryQuery only after the active master's lease has expired, so only one master serves queries at a time. & Second \DC host & Yes (own database) & Failover in seconds (\scnref{AV-3})\\\hline
+\StandbyMaster & Hot spare: a second subscription that applies every event idempotently; takes over the \InventoryQuery only after the active master's lease has expired, so only one master serves queries at a time. & Second \DC host & Yes (own database) & Failover within 30 seconds (\scnref{AV-3})\\\hline
 \ShippingOrderFulfillment & Subscriber that receives store-raised \ShippingOrder{}s, reads the master through the \InventoryQuery, and presents each order to the \DC manager for fulfilment. & \DC & None & Order usability (\scnref{USE-1})\\\hline
 \StoreTrackingClient & Subscriber; shows a store's inventory and answers the \DC manager's store-status queries. & \DC & None & Variable client (\scnref{SCAL-2}, \scnref{INT-2})\\\hline
 \ReportingClient & Subscriber; answers the \DC manager's report queries. & \DC & None & Report load (\scnref{PERF-3}, \scnref{USE-2})\\\hline
@@ -213,7 +213,7 @@ Figure~\ref{fig:cc-seq-reconcile} is the recovery path. The \StoreLocalInventory
 lost state rebuilds by replay after a resync compares per-source sequence watermarks. When
 the \CentralMasterInventory fails (\scnref{AV-3}), missed heartbeats (Bass, Clements, and
 Kazman 57) detect it and query clients fail over to the already current \StandbyMaster
-within seconds, while the \CFE keeps accepting events. Only one master serves the
+within 30 seconds, while the \CFE keeps accepting events. Only one master serves the
 \InventoryQuery at a time: the active master holds a lease, a master that cannot renew its
 lease stops serving queries, and the standby takes over only after that lease has expired,
 so a network partition cannot leave two masters answering. The failed copy copies the
