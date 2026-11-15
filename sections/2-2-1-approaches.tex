@@ -238,11 +238,12 @@ The selected recovery, buffering, mutual TLS and store-provisioning mechanisms
 still need timed recovery and load tests. Full \Outbox admission rejects the whole
 local transaction, leaving inventory and its outgoing event unchanged. Central admission
 returns \texttt{BUSY} before accepting excess work (Section~\ref{sec:iep}). Snapshot
-recovery after reconnection does not keep writes available while the buffer is full.
-\scnref{AV-1}'s availability claim must account for that limit.
+recovery after reconnection does not keep writes available while the buffer is full,
+so a WAN outage that outlasts the store's buffer is a risk to \scnref{AV-1}'s availability.
 Measure \scnref{AV-3} from process failure to successful queries
 through the standby, including detection, lease expiry and client switching.
-Its numeric upper bound still needs agreement. Validate standby lag, exclusive query
+\scnref{AV-3} does not yet state a numeric failover bound; this is an open risk for
+the evaluation. Validate standby lag, exclusive query
 ownership during a partition, and consistent state transfer while new events arrive.
 Credential/scope administration, backup restoration and the physical dispatch handoff
 require validation. For \scnref{TEST-2}, measure failure detection through restored local

@@ -35,7 +35,7 @@
 \item[Distribution Center (DC)] The central hub that ships product to the stores and hosts the Communications Front-End and the Central Master Inventory.
 \item[External system] A system outside our boundary reached through a defined interface: the point-of-sale system at each store or the future External Analytics Client.
 \begin{samepage}
-\item[Product family] A node in the family hierarchy that may contain sub-families. Products join it through separate many-to-many membership and may belong to several families. A family-value report counts each product once.\par
+\item[Product family] A node in the family hierarchy that may contain sub-families. Products join it through separate many-to-many membership and may belong to several families. A family-value report counts each product once per family.\par
 \end{samepage}
 \item[Composite] The GoF structural pattern applied to the family hierarchy (Gamma et al. 163). Products join families through separate membership links. \texttt{ProductFamily.totalValue()} traverses sub-families and counts each product once per family.
 \item[Scenario ID] The frozen identifier of a quality-attribute scenario (for example, \texttt{AV-1}) that the interface specification and the tactics table reference.
